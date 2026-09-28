@@ -63,6 +63,7 @@ find_library(LOG_LIB log)
 
 add_library(essentialwhisper SHARED
     ${WHISPER_LIB_DIR}/src/whisper.cpp
+    ${WHISPER_LIB_DIR}/src/aneforge/whisper-aneforge.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/jni.cpp
 )
 

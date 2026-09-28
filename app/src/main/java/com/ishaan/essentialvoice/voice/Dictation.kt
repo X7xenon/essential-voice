@@ -1533,6 +1533,7 @@ object Dictation {
                 .instance?.insertText(text) ?: false
             if (typed) {
                 landed = true
+                if (Features.GLYPH) com.ishaan.essentialvoice.glyph.NothingGlyphController.onDelivered()
             } else if (!s.copyToClipboard) {
                 // There was nowhere to type and no copy was asked for; putting it
                 // on the clipboard anyway beats dropping what was just dictated.

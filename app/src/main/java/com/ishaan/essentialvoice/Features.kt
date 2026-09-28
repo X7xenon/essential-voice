@@ -15,6 +15,9 @@ package com.ishaan.essentialvoice
  * or a sensor, is never attached at all. See [com.ishaan.essentialvoice.trigger.EssentialKeyService].
  */
 object Features {
+    /** Nothing Glyph Lights integration (voice reaction, listening, thinking). */
+    const val GLYPH = true
+
     /** The lozenge at the camera cutout, and with it the media player on it. */
     const val ISLAND = false
 

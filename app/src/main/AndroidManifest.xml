@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="com.nothing.ketchum.permission.ENABLE" />
 
     <!-- One notification, once, when a newer build is published. Not one of the
          permissions Play Protect blocks sideloaded apps for. -->

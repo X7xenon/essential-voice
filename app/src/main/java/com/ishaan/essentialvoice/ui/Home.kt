@@ -134,6 +134,13 @@ import com.ishaan.essentialvoice.whisper.WhisperEngine
 import com.ishaan.essentialvoice.whisper.ModelDownloader
 import com.ishaan.essentialvoice.whisper.QualityTier
 import kotlin.math.roundToInt
+import com.ishaan.essentialvoice.glyph.NothingGlyphController
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.LinearEasing
+import kotlin.math.sin
 
 /** The two things the app is: its settings, and everything it kept. */
 private enum class Tab { Settings, Library }
@@ -296,7 +303,7 @@ fun HomeScreen(
  * drawings' choice, so the label inside it is the heading.
  */
 private enum class Page {
-    SetUp, Game, Earbuds, Volume, Island,
+    SetUp, Game, Earbuds, Volume, Island, Glyph,
 }
 
 /**
@@ -571,6 +578,23 @@ private fun Launcher(
         ) { IslandArt() }
         CardGap()
 
+        if (Features.GLYPH) {
+            HeroCard(
+                index = ++slot,
+                title = "Glyph lights",
+                body = if (p.settings.glyphEnabled) {
+                    "Live voice reaction, listening indicator and rear lights."
+                } else {
+                    "Rear LEDs for voice levels, listening and Nothing OS integration."
+                },
+                cta = if (p.settings.glyphEnabled) "Config" else "Turn on",
+                intro = intro,
+                likeKey = Page.Glyph.name,
+                onClick = { onOpen(Page.Glyph) },
+            ) { GlyphArt() }
+            CardGap()
+        }
+
         if (Features.GAME_MODE) {
             HeroCard(
                 index = ++slot,
@@ -656,6 +680,7 @@ private fun PageArt(page: Page) {
         Page.Earbuds -> EarbudsArt()
         Page.Volume -> VolumeArt()
         Page.Island -> IslandArt()
+        Page.Glyph -> GlyphArt()
         Page.Game -> ArtTile(EV.Cta, caption = "Game", ink = EV.OnCta) {
             Image(
                 painter = painterResource(R.drawable.ic_game),
@@ -676,6 +701,7 @@ private fun Detail(page: Page, p: Panels, onBack: () -> Unit) {
             Page.Earbuds -> EarbudsSection(p)
             Page.Volume -> VolumeSection(p)
             Page.Island -> IslandSection(p)
+            Page.Glyph -> GlyphSection(p)
         }
     }
 }
@@ -753,6 +779,18 @@ private fun SetUpSection(p: Panels) {
                 } else {
                     EvText("SET", type.button, color = EV.Ink)
                 }
+            }
+
+            Hairline()
+            SettingRow(
+                title = "Keyboard only",
+                sub = "Only trigger dictation when on-screen keyboard is open.",
+                enabled = setup.accessibility,
+            ) {
+                EvSwitch(
+                    settings.triggerKeyboardOnly,
+                    enabled = setup.accessibility,
+                ) { prefs.setTriggerKeyboardOnly(it) }
             }
 
             // The ways in that are not the key live on the learn-key screen
@@ -1070,6 +1108,225 @@ private fun IslandSection(p: Panels) {
                     step = 10,
                     range = 60..320,
                 ) { prefs.setIslandWidthDp(it) }
+            }
+        }
+    }
+}
+
+/**
+ * Animated Nothing Phone (3a) rear Glyph preview tile.
+ * Renders the top curved group (Zone A), C-Arc meter, and bottom status dash.
+ */
+@Composable
+private fun GlyphArt(modifier: Modifier = Modifier, size: Dp = EV.ArtTile) {
+    val phase by rememberInfiniteTransition(label = "glyphPulse").animateFloat(
+        initialValue = 0f,
+        targetValue = (2.0 * Math.PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(2200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "phase",
+    )
+    val glow = ((sin(phase.toDouble()) + 1.0) / 2.0).toFloat()
+    val arcSweep = 140f + 70f * glow
+
+    ArtTile(
+        fill = EV.SurfaceSunk,
+        modifier = modifier,
+        caption = "Glyph Lights",
+        ink = EV.Ink,
+        size = size,
+    ) {
+        Canvas(Modifier.size(54.dp)) {
+            val strokeW = 3.dp.toPx()
+            val w = this.size.width
+            val h = this.size.height
+
+            // Outer subtle boundary representing Phone (3a) back glass
+            drawRoundRect(
+                color = Color.White.copy(alpha = 0.08f),
+                topLeft = Offset(4.dp.toPx(), 4.dp.toPx()),
+                size = androidx.compose.ui.geometry.Size(w - 8.dp.toPx(), h - 8.dp.toPx()),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx()),
+            )
+
+            // C-Arc progress track (dim background)
+            drawArc(
+                color = Color.White.copy(alpha = 0.2f),
+                startAngle = 135f,
+                sweepAngle = 210f,
+                useCenter = false,
+                topLeft = Offset(10.dp.toPx(), 10.dp.toPx()),
+                size = androidx.compose.ui.geometry.Size(w - 20.dp.toPx(), h - 20.dp.toPx()),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = strokeW,
+                    cap = StrokeCap.Round,
+                ),
+            )
+
+            // Active animated glowing C-Arc (voice orb meter)
+            drawArc(
+                color = Color.White.copy(alpha = 0.75f + 0.25f * glow),
+                startAngle = 135f,
+                sweepAngle = arcSweep,
+                useCenter = false,
+                topLeft = Offset(10.dp.toPx(), 10.dp.toPx()),
+                size = androidx.compose.ui.geometry.Size(w - 20.dp.toPx(), h - 20.dp.toPx()),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = strokeW,
+                    cap = StrokeCap.Round,
+                ),
+            )
+
+            // Top Zone A (curved voice group)
+            drawArc(
+                color = Color.White.copy(alpha = 0.4f + 0.6f * glow),
+                startAngle = 225f,
+                sweepAngle = 90f,
+                useCenter = false,
+                topLeft = Offset(17.dp.toPx(), 17.dp.toPx()),
+                size = androidx.compose.ui.geometry.Size(w - 34.dp.toPx(), h - 34.dp.toPx()),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = strokeW,
+                    cap = StrokeCap.Round,
+                ),
+            )
+
+            // Zone B bottom status dash
+            drawLine(
+                color = Color.White.copy(alpha = 0.5f + 0.4f * glow),
+                start = Offset(w * 0.42f, h * 0.72f),
+                end = Offset(w * 0.58f, h * 0.72f),
+                strokeWidth = strokeW,
+                cap = StrokeCap.Round,
+            )
+
+            // Center glowing dot (Orb core)
+            drawCircle(
+                color = Color.White.copy(alpha = 0.9f),
+                radius = (3f + 1.5f * glow).dp.toPx(),
+                center = Offset(w / 2f, h / 2f),
+            )
+        }
+    }
+}
+
+/**
+ * Settings for the Nothing Phone (3a) rear Glyph LEDs and triggers.
+ */
+@Composable
+private fun GlyphSection(p: Panels) {
+    val settings = p.settings
+    val prefs = p.prefs
+    var testRunning by remember { mutableStateOf(false) }
+
+    Column(Modifier.fillMaxWidth()) {
+        SectionLabel("Glyph lights")
+        Panel {
+            SettingRow(
+                title = "Glyph lights",
+                sub = "Rear LEDs react to your voice and show dictation state on Phone (3a).",
+                enabled = true,
+            ) {
+                EvSwitch(
+                    settings.glyphEnabled,
+                    enabled = true,
+                ) { prefs.setGlyphEnabled(it) }
+            }
+
+            if (settings.glyphEnabled) {
+                Hairline()
+                SettingRow(
+                    title = "Live voice reaction",
+                    sub = "Rear LEDs breathe and scale dynamically with speaking volume (Orb talk).",
+                    enabled = settings.glyphEnabled,
+                ) {
+                    EvSwitch(
+                        settings.glyphVoiceReaction,
+                        enabled = settings.glyphEnabled,
+                    ) { prefs.setGlyphVoiceReaction(it) }
+                }
+
+                Hairline()
+                SettingRow(
+                    title = "Listening glow",
+                    sub = "Steady glow while waiting for speech.",
+                    enabled = settings.glyphEnabled,
+                ) {
+                    EvSwitch(
+                        settings.glyphListening,
+                        enabled = settings.glyphEnabled,
+                    ) { prefs.setGlyphListening(it) }
+                }
+
+                Hairline()
+                SettingRow(
+                    title = "Thinking pulse",
+                    sub = "Smooth breathing animation while Whisper is transcribing your voice.",
+                    enabled = settings.glyphEnabled,
+                ) {
+                    EvSwitch(
+                        settings.glyphThinking,
+                        enabled = settings.glyphEnabled,
+                    ) { prefs.setGlyphThinking(it) }
+                }
+
+                Hairline()
+                SettingRow(
+                    title = "Text delivered flash",
+                    sub = "Quick confirmation double-blink when text is inserted into the active app.",
+                    enabled = settings.glyphEnabled,
+                ) {
+                    EvSwitch(
+                        settings.glyphSuccessFlash,
+                        enabled = settings.glyphEnabled,
+                    ) { prefs.setGlyphSuccessFlash(it) }
+                }
+
+                Hairline()
+                SettingRow(
+                    title = "Keyboard indicator",
+                    sub = "Subtle Zone B LED indicator when on-screen keyboard is open.",
+                    enabled = settings.glyphEnabled,
+                ) {
+                    EvSwitch(
+                        settings.glyphKeyboardOpen,
+                        enabled = settings.glyphEnabled,
+                    ) { prefs.setGlyphKeyboardOpen(it) }
+                }
+
+                Hairline()
+                Column(Modifier.padding(18.dp)) {
+                    EvButton(
+                        label = if (testRunning) "Testing..." else "Test Glyph lights",
+                        modifier = Modifier.fillMaxWidth(),
+                        kind = EvButtonKind.Quiet,
+                        enabled = !testRunning,
+                    ) {
+                        testRunning = true
+                        NothingGlyphController.runTestSweep {
+                            testRunning = false
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        SectionLabel("Key trigger")
+        Panel {
+            SettingRow(
+                title = "Keyboard only trigger",
+                sub = "Essential Key activates voice only when on-screen keyboard is open.",
+                enabled = true,
+            ) {
+                EvSwitch(
+                    settings.triggerKeyboardOnly,
+                    enabled = true,
+                ) { prefs.setTriggerKeyboardOnly(it) }
             }
         }
     }

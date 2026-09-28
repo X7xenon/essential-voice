@@ -199,6 +199,20 @@ data class Settings(
     val gameArmed: Boolean,
     /** What game mode is allowed to change while it is armed. */
     val game: GameProfile,
+    /** Nothing Glyph Lights master toggle. */
+    val glyphEnabled: Boolean,
+    /** Real-time microphone audio level reaction (Orb Talking style). */
+    val glyphVoiceReaction: Boolean,
+    /** Steady glow / indicator while listening. */
+    val glyphListening: Boolean,
+    /** Smooth breathing wave during Whisper transcribing. */
+    val glyphThinking: Boolean,
+    /** Quick confirmation flash when text is pasted. */
+    val glyphSuccessFlash: Boolean,
+    /** Rear indicator when soft keyboard is open on screen. */
+    val glyphKeyboardOpen: Boolean,
+    /** Essential Key triggers voice only when keyboard is open. */
+    val triggerKeyboardOnly: Boolean,
 ) {
     val hasTrigger: Boolean get() = triggerKeyCode > 0 || triggerScanCode > 0
 
@@ -331,6 +345,13 @@ class Prefs private constructor(context: Context) {
         theme = sp.getString(K_THEME, THEME_SYSTEM) ?: THEME_SYSTEM,
         gameArmed = sp.getBoolean(K_GAME_ARMED, false),
         game = readGame(),
+        glyphEnabled = sp.getBoolean(K_GLYPH_ENABLED, true),
+        glyphVoiceReaction = sp.getBoolean(K_GLYPH_VOICE_REACTION, true),
+        glyphListening = sp.getBoolean(K_GLYPH_LISTENING, true),
+        glyphThinking = sp.getBoolean(K_GLYPH_THINKING, false),
+        glyphSuccessFlash = sp.getBoolean(K_GLYPH_SUCCESS_FLASH, false),
+        glyphKeyboardOpen = sp.getBoolean(K_GLYPH_KEYBOARD_OPEN, false),
+        triggerKeyboardOnly = sp.getBoolean(K_TRIGGER_KEYBOARD_ONLY, false),
     )
 
     private fun readGame(): GameProfile {
@@ -523,6 +544,14 @@ class Prefs private constructor(context: Context) {
      * switch that the system silently overrides at sunset is not a switch.
      */
     fun setTheme(v: String) = sp.edit().putString(K_THEME, v).apply()
+
+    fun setGlyphEnabled(v: Boolean) = sp.edit().putBoolean(K_GLYPH_ENABLED, v).apply()
+    fun setGlyphVoiceReaction(v: Boolean) = sp.edit().putBoolean(K_GLYPH_VOICE_REACTION, v).apply()
+    fun setGlyphListening(v: Boolean) = sp.edit().putBoolean(K_GLYPH_LISTENING, v).apply()
+    fun setGlyphThinking(v: Boolean) = sp.edit().putBoolean(K_GLYPH_THINKING, v).apply()
+    fun setGlyphSuccessFlash(v: Boolean) = sp.edit().putBoolean(K_GLYPH_SUCCESS_FLASH, v).apply()
+    fun setGlyphKeyboardOpen(v: Boolean) = sp.edit().putBoolean(K_GLYPH_KEYBOARD_OPEN, v).apply()
+    fun setTriggerKeyboardOnly(v: Boolean) = sp.edit().putBoolean(K_TRIGGER_KEYBOARD_ONLY, v).apply()
 
     /**
      * Whether the one first-run question has been asked.
@@ -739,6 +768,13 @@ class Prefs private constructor(context: Context) {
         private const val K_G_SEEDED = "game_arm_for_seeded"
         private const val K_G_SNAPSHOT = "game_snapshot"
         private const val K_G_AUTO_ARMED = "game_auto_armed"
+        private const val K_GLYPH_ENABLED = "glyph_enabled"
+        private const val K_GLYPH_VOICE_REACTION = "glyph_voice_reaction"
+        private const val K_GLYPH_LISTENING = "glyph_listening"
+        private const val K_GLYPH_THINKING = "glyph_thinking"
+        private const val K_GLYPH_SUCCESS_FLASH = "glyph_success_flash"
+        private const val K_GLYPH_KEYBOARD_OPEN = "glyph_keyboard_open"
+        private const val K_TRIGGER_KEYBOARD_ONLY = "trigger_keyboard_only"
 
         @Volatile private var instance: Prefs? = null
 

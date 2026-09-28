@@ -17,6 +17,7 @@ import com.ishaan.essentialvoice.Prefs
 import com.ishaan.essentialvoice.game.GameMode
 import com.ishaan.essentialvoice.island.Island
 import com.ishaan.essentialvoice.media.NowPlaying
+import com.ishaan.essentialvoice.glyph.NothingGlyphController
 import com.ishaan.essentialvoice.sensor.BackTap
 import com.ishaan.essentialvoice.voice.Bar
 import com.ishaan.essentialvoice.voice.HomeSwipe
@@ -102,7 +103,10 @@ class EssentialKeyService : AccessibilityService() {
         // catch a media session token off a posted notification. It does not
         // work — see NowPlaying — so the subscription is off again.
         runCatching {
-            serviceInfo = serviceInfo?.apply { eventTypes = 0 }
+            serviceInfo = serviceInfo?.apply {
+                eventTypes = 0
+                flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            }
         }.onFailure { Log.w(TAG, "could not drop event subscriptions", it) }
 
         prefs = Prefs.get(this)
@@ -137,6 +141,7 @@ class EssentialKeyService : AccessibilityService() {
         // Two knocks on the back of the phone. Nothing is registered with the
         // sensor until the setting asks for it — see BackTap.apply.
         if (Features.BACK_TAP) BackTap.attach(this)
+        if (Features.GLYPH) NothingGlyphController.attach(this)
         scope.launch {
             prefs.state.collect {
                 if (Features.GAME_MODE) {
@@ -147,6 +152,7 @@ class EssentialKeyService : AccessibilityService() {
                 // After GameMode.apply, which is what decides whether the key —
                 // and so the knock — is silenced for a game.
                 if (Features.BACK_TAP) BackTap.apply(it)
+                if (Features.GLYPH) NothingGlyphController.apply(it)
                 Bar.apply(it.pill)
                 if (Features.HOME_SWIPE) HomeSwipe.apply(it)
                 if (Features.VOLUME_SLIDER) VolumeSlider.apply(it)
@@ -169,6 +175,7 @@ class EssentialKeyService : AccessibilityService() {
 
     override fun onDestroy() {
         scope.cancel()
+        if (Features.GLYPH) NothingGlyphController.detach()
         if (Features.BACK_TAP) BackTap.detach()
         Bar.detach()
         if (Features.HOME_SWIPE) HomeSwipe.detach()
@@ -274,6 +281,7 @@ class EssentialKeyService : AccessibilityService() {
         if (Features.GAME_MODE && GameMode.mutesKey) return false
         if (!matchesTrigger(event)) return false
         val settings = prefs.now
+        if (settings.triggerKeyboardOnly && !isKeyboardOpen() && !holding && pendingStart == null) return false
 
         when (event.action) {
             KeyEvent.ACTION_DOWN -> {
@@ -318,6 +326,18 @@ class EssentialKeyService : AccessibilityService() {
         val s = prefs.now
         if (s.triggerScanCode > 0 && event.scanCode == s.triggerScanCode) return true
         return s.triggerKeyCode > 0 && event.keyCode == s.triggerKeyCode
+    }
+
+    /**
+     * Checks if the soft keyboard (IME) window is currently open on the screen.
+     */
+    fun isKeyboardOpen(): Boolean {
+        val ime = runCatching {
+            windows?.firstOrNull { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        }.getOrNull() ?: return false
+        val bounds = android.graphics.Rect()
+        ime.getBoundsInScreen(bounds)
+        return !bounds.isEmpty && bounds.height() > 100
     }
 
     private fun startDictation(): Boolean = Dictation.begin()
