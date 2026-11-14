@@ -55,13 +55,33 @@ object ModelDownloader {
 
         var conn: HttpURLConnection? = null
         try {
-            conn = (URL(variant.url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 20_000
-                readTimeout = 30_000
-                instanceFollowRedirects = true
-                if (done > 0) setRequestProperty("Range", "bytes=$done-")
+            var currentUrl = variant.url
+            var redirects = 0
+            while (redirects < 5) {
+                conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 20_000
+                    readTimeout = 30_000
+                    instanceFollowRedirects = false
+                    if (done > 0) setRequestProperty("Range", "bytes=$done-")
+                }
+                val code = conn.responseCode
+                if (code == HttpURLConnection.HTTP_MOVED_PERM ||
+                    code == HttpURLConnection.HTTP_MOVED_TEMP ||
+                    code == HttpURLConnection.HTTP_SEE_OTHER ||
+                    code == 307 || code == 308
+                ) {
+                    val loc = conn.getHeaderField("Location")
+                    conn.disconnect()
+                    if (loc != null) {
+                        currentUrl = loc
+                        redirects++
+                        continue
+                    }
+                }
+                break
             }
-            val code = conn.responseCode
+            val activeConn = conn ?: throw IllegalStateException("Failed to open connection")
+            val code = activeConn.responseCode
 
             // 200 on a resume attempt means the server ignored Range: start over.
             if (done > 0 && code == HttpURLConnection.HTTP_OK) {
@@ -74,7 +94,7 @@ object ModelDownloader {
 
             RandomAccessFile(part, "rw").use { out ->
                 out.seek(done)
-                conn.inputStream.use { input ->
+                activeConn.inputStream.use { input ->
                     val buf = ByteArray(256 * 1024)
                     var lastPublish = 0L
                     while (true) {

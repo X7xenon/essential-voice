@@ -24,3 +24,11 @@ publish/
 
 # The likes backend: project URL and anon key. See social/Likes.kt.
 supabase.properties
+
+# Loop automation state
+.loop/
+
+# Local APK releases
+releases_v3/
+*.apk
+

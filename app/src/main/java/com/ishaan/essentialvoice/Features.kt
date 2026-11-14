@@ -62,12 +62,8 @@ object Features {
 
     /**
      * This app drawing the volume, instead of the panel Nothing OS draws.
-     *
-     * On, unlike the four above it, because it is a setting rather than a
-     * section: switched off in Prefs by default, so the build ships it and
-     * nobody's volume buttons change until they ask.
      */
-    const val VOLUME_SLIDER = true
+    const val VOLUME_SLIDER = false
 
     /**
      * Two fingers up from the home bar.

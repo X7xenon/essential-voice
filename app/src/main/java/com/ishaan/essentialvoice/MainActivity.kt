@@ -28,6 +28,7 @@ import com.ishaan.essentialvoice.ui.EV
 import com.ishaan.essentialvoice.ui.EssentialVoiceTheme
 import com.ishaan.essentialvoice.ui.HomeScreen
 import com.ishaan.essentialvoice.ui.LearnKeyScreen
+import com.ishaan.essentialvoice.glyph.NothingGlyphController
 import com.ishaan.essentialvoice.whisper.ModelDownloader
 import kotlinx.coroutines.launch
 
@@ -59,10 +60,19 @@ class MainActivity : ComponentActivity() {
 
         prefs = Prefs.get(this)
         prefs.learnMode = false
+        if (Features.GLYPH) {
+            NothingGlyphController.attach(this)
+            NothingGlyphController.apply(prefs.now)
+        }
         refresh()
 
         setContent {
             val settings by prefs.state.collectAsState()
+            LaunchedEffect(settings) {
+                if (Features.GLYPH) {
+                    NothingGlyphController.apply(settings)
+                }
+            }
             val dark = when (settings.theme) {
                 Prefs.THEME_LIGHT -> false
                 Prefs.THEME_DARK -> true
@@ -86,12 +96,6 @@ class MainActivity : ComponentActivity() {
                 var learning by remember { mutableStateOf(false) }
                 val setup = setupState ?: Setup.read(context)
 
-                // What's new needs the manifest to have been read, and nobody
-                // opens an app in order to press a button called "check". Only
-                // once, and only if nothing has looked yet this run.
-                LaunchedEffect(Unit) {
-                    if (Updater.state.value is Updater.State.Idle) Updater.check(context)
-                }
 
                 Box(
                     Modifier

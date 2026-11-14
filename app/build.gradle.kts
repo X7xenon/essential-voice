@@ -36,14 +36,14 @@ android {
         applicationId = "com.ishaan.essentialvoice"
         minSdk = 31
         targetSdk = 35
-        versionCode = 8
-        versionName = "3.0"
+        versionCode = 17
+        versionName = "1.7"
 
         // Where the app looks for news of a newer build. See Updater.kt.
         buildConfigField(
             "String",
             "UPDATE_MANIFEST_URL",
-            "\"https://raw.githubusercontent.com/email2ishaanpatel-collab/essential-voice/main/update.json\"",
+            "\"\"",
         )
 
         // The likes backend: a PostgREST base and the public anon key. Empty
@@ -153,4 +153,5 @@ dependencies {
     implementation("androidx.compose.material3:material3")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    testImplementation("junit:junit:4.13.2")
 }

@@ -353,11 +353,37 @@ object NoteStore {
      */
     @Synchronized
     fun delete(context: Context, id: Long) {
+        if (Playback.state.value?.id == id) Playback.stop()
         load(context)
         _notes.value.firstOrNull { it.id == id }?.let { note ->
             audioFile(context, note)?.let { f -> runCatching { f.delete() } }
         }
         _notes.value = _notes.value.filterNot { it.id == id }
+        persist(context)
+    }
+
+    /** Delete multiple notes by their IDs in a single pass. */
+    @Synchronized
+    fun deleteMultiple(context: Context, ids: Set<Long>) {
+        if (ids.isEmpty()) return
+        if (Playback.state.value?.id in ids) Playback.stop()
+        load(context)
+        _notes.value.filter { it.id in ids }.forEach { note ->
+            audioFile(context, note)?.let { f -> runCatching { f.delete() } }
+        }
+        _notes.value = _notes.value.filterNot { it.id in ids }
+        persist(context)
+    }
+
+    /** Delete all notes/recordings and wipe all associated audio files. */
+    @Synchronized
+    fun deleteAll(context: Context) {
+        Playback.stop()
+        load(context)
+        _notes.value.forEach { note ->
+            audioFile(context, note)?.let { f -> runCatching { f.delete() } }
+        }
+        _notes.value = emptyList()
         persist(context)
     }
 

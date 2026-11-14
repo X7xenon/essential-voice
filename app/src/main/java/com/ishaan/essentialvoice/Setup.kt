@@ -52,7 +52,7 @@ data class SetupState(
     val dndAccess: Boolean,
 ) {
     /** Enough to run a dictation, whatever the trigger. */
-    val canDictate: Boolean get() = accessibility && overlay && microphone
+    val canDictate: Boolean get() = accessibility && (overlay || accessibility) && microphone
 
     val ready: Boolean get() = canDictate && keyLearned
 }

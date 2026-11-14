@@ -119,6 +119,7 @@ import com.ishaan.essentialvoice.Features
 import com.ishaan.essentialvoice.WhatsNew
 import com.ishaan.essentialvoice.notes.NotesWidget
 import com.ishaan.essentialvoice.notes.NoteStore
+import com.ishaan.essentialvoice.notion.NotionExporter
 import com.ishaan.essentialvoice.notes.Playback
 import com.ishaan.essentialvoice.notes.Transcribe
 import com.ishaan.essentialvoice.notes.openNote
@@ -215,7 +216,7 @@ fun HomeScreen(
         // room with nothing in it, and taking 26dp off the setup steps to do it.
         androidx.compose.foundation.pager.HorizontalPager(
             state = pager,
-            userScrollEnabled = setup.ready,
+            userScrollEnabled = true,
             modifier = Modifier
                 .fillMaxSize()
                 .drawWithContent {
@@ -250,20 +251,9 @@ fun HomeScreen(
         }
         }
 
-        // The bar is composed before the two things that cover the page, so
-        // that they cover it too. Composed after them it drew on top of their
-        // scrims and kept taking taps — the tabs stayed live behind a modal,
-        // and switching page under an open dialog is not something a dialog
-        // should allow.
-        if (setup.ready) {
-            FloatingNav(pager, backdrop, Modifier.align(Alignment.BottomCenter)) { next ->
-                scope.launch { pager.animateScrollToPage(pages.indexOf(next)) }
-            }
-        } else if (pager.currentPage != 0) {
-            // Setup can finish, or come undone, while the app is open. If the
-            // bar goes while the library is showing, the page has to come
-            // back with it.
-            LaunchedEffect(Unit) { pager.scrollToPage(0) }
+        // Floating nav is always visible so Big Boss can access History at any time
+        FloatingNav(pager, backdrop, Modifier.align(Alignment.BottomCenter)) { next ->
+            scope.launch { pager.animateScrollToPage(pages.indexOf(next)) }
         }
 
         info?.let { open ->
@@ -464,8 +454,6 @@ private fun Launcher(
 ) {
     val context = LocalContext.current
     val type = LocalEvType.current
-    val version = remember { Updater.installedVersionName(context) }
-    val build = remember { Updater.installedVersionCode(context) }
     LaunchedEffect(Unit) { onIntroduced() }
 
     // Cards come and go with the feature flags, so nothing on the page can
@@ -487,44 +475,11 @@ private fun Launcher(
             .padding(bottom = if (p.setup.ready) 128.dp else 40.dp),
     ) {
         Masthead(p.setup, p.settings, p.prefs)
-        Spacer(Modifier.height(72.dp))
-
-        // ---- the three rows above the cards --------------------------------
-        //
-        // Not cards, and deliberately: they are about the app itself rather than
-        // about anything it does. Two of them open in place rather than going
-        // anywhere, because what they hold is a paragraph to read, not a screen
-        // to work in — and a paragraph behind a tap is a paragraph nobody reads.
-        //
-        // The plea is first. It is the only red thing on the page and the only
-        // one of the three that is asking rather than offering, and it is time
-        // limited, so it goes away the moment the app is in the store.
-        var helpOpen by rememberSaveable { mutableStateOf(false) }
-
-        DisclosurePill(
-            label = "I need your help",
-            open = helpOpen,
-            onToggle = { helpOpen = !helpOpen },
-            // Slot zero: the rows lead the entrance, and the cards follow them
-            // from one.
-            modifier = Modifier.rises(slot, intro),
-            fill = EV.DangerFill,
-            fillSunk = EV.DangerFillSunk,
-            ink = EV.Red,
-        ) {
-            PlayStoreBody()
-        }
-        Spacer(Modifier.height(10.dp))
-
-        UpdatesCard(p, version, build, Modifier.rises(slot, intro))
-
-        // The one big gap on the page. Everything under it is a card, twelve
-        // apart, and the gap is what says these two are not.
-        Spacer(Modifier.height(72.dp))
+        Spacer(Modifier.height(28.dp))
 
         HeroCard(
             index = ++slot,
-            title = "Essential voice",
+            title = "GlyphVoice",
             body = if (p.setup.ready) {
                 "Hold the key and speak. The pill, the ways in, the rest."
             } else {
@@ -535,47 +490,6 @@ private fun Launcher(
             likeKey = Page.SetUp.name,
             onClick = { onOpen(Page.SetUp) },
         ) { VoiceMark() }
-        CardGap()
-
-        HeroCard(
-            index = ++slot,
-            title = "Widgets & tiles",
-            body = "Your earbuds one tap away, from the home screen or a swipe.",
-            cta = "Check it out",
-            intro = intro,
-            likeKey = Page.Earbuds.name,
-            onClick = { onOpen(Page.Earbuds) },
-        ) { EarbudsArt() }
-        CardGap()
-
-        if (Features.VOLUME_SLIDER) {
-            HeroCard(
-                index = ++slot,
-                title = "Volume ctrl",
-                body = "This app draws the volume instead of the phone.",
-                cta = "Set up",
-                intro = intro,
-                likeKey = Page.Volume.name,
-                onClick = { onOpen(Page.Volume) },
-            ) { VolumeArt() }
-            CardGap()
-        }
-
-        HeroCard(
-            index = ++slot,
-            title = "Essential island",
-            body = "A lozenge at the camera. Tap to start, tap again to send.",
-            cta = if (Features.ISLAND) "Set up" else "Coming soon",
-            intro = intro,
-            // The one yellow button on the page, and it is on the one card you
-            // cannot open. That is the drawings' idea and it is a good one: the
-            // loud colour marks the thing that is not ready rather than
-            // competing with ten buttons that are.
-            kind = if (Features.ISLAND) CardCta.Dark else CardCta.Accent,
-            enabled = Features.ISLAND,
-            likeKey = Page.Island.name,
-            onClick = { onOpen(Page.Island) },
-        ) { IslandArt() }
         CardGap()
 
         if (Features.GLYPH) {
@@ -617,49 +531,32 @@ private fun Launcher(
             CardGap()
         }
 
-        // ---- one switch, on the way out ------------------------------------
-        //
-        // The only setting on the launcher, and it earns the place: it is about
-        // the app rather than about dictating, which is what every card above it
-        // is about, and it belongs beside the two rows at the top that are also
-        // about the app. Down here rather than up there because it is a thing
-        // you set once and never look at again.
-        Spacer(Modifier.height(30.dp))
+        Spacer(Modifier.height(18.dp))
+        SectionLabel("Information")
         Panel {
-            SettingRow(
-                title = "Notify me about new versions",
-                sub = "Checks once a day and tells you once per release. Nothing is " +
-                    "sent \u2014 it only reads a small file.",
-            ) {
-                EvSwitch(p.settings.updateNotices) { on ->
-                    p.prefs.setUpdateNotices(on)
-                    if (on && !Setup.hasNotificationPermission(context)) {
-                        p.onRequestNotifications()
-                    }
-                }
+            Column(Modifier.padding(18.dp)) {
+                EvText("GlyphVoice", type.title)
+                Spacer(Modifier.height(4.dp))
+                EvText(
+                    "Version 1.7 (Big Boss Custom Edition)\n" +
+                        "Autonomous on-device neural dictation with Nothing Phone (3a) rear Glyph reaction, " +
+                        "bilingual English & Hinglish transcription, and keyboard trigger mode.",
+                    type.sub,
+                )
+                Spacer(Modifier.height(14.dp))
+                Hairline(inset = 0.dp)
+                Spacer(Modifier.height(14.dp))
+                EvText("SYSTEM & HARDWARE", type.label, color = EV.Ink)
+                Spacer(Modifier.height(6.dp))
+                EvText(
+                    "Target: Nothing Phone (3a)\n" +
+                        "Glyph Engine: Native Nothing OS IGlyphService AIDL\n" +
+                        "Models: Whisper.cpp Base + Hinglish Turbo (Apex Q5_1)\n" +
+                        "Privacy: 100% on-device processing. No cloud telemetry.",
+                    type.mono,
+                )
             }
         }
-
-        // ---- the two that were never screens -------------------------------
-        //
-        // A card is a door, and behind each of these there is one panel with one
-        // control in it. They were cards for a while and it made you tap twice
-        // to reach a text box. They read the way they did before the redesign
-        // instead: a heading and the box, at the foot of the page, where the
-        // asking belongs.
-        SectionLabel("Ideas")
-        FeedbackPanel()
-
-        SectionLabel("Support me")
-        SupportPanel()
-
-        SectionLabel("Spread the word")
-        SpreadPanel()
-
-        // The line about whisper.cpp that used to close this page is at the
-        // foot of Essential voice now — see [SetUpSection]. It is a footnote to
-        // the recognition model, and it was sitting under a share sheet three
-        // sections away from the only screen that mentions models at all.
     }
 }
 
@@ -791,6 +688,26 @@ private fun SetUpSection(p: Panels) {
                     settings.triggerKeyboardOnly,
                     enabled = setup.accessibility,
                 ) { prefs.setTriggerKeyboardOnly(it) }
+            }
+
+            Hairline()
+            SettingRow(
+                title = "Test dictation",
+                sub = if (Dictation.isBusy) "Listening / transcribing..." else "Tap to test voice dictation right now.",
+                enabled = setup.accessibility,
+                onClick = {
+                    if (Dictation.isReady) {
+                        Dictation.toggle()
+                    } else {
+                        Toast.makeText(context, "Turn on Accessibility Service first", Toast.LENGTH_SHORT).show()
+                    }
+                },
+            ) {
+                EvText(
+                    if (Dictation.isBusy) "STOP" else "TEST",
+                    type.button,
+                    color = if (Dictation.isBusy) EV.Red else EV.Ink,
+                )
             }
 
             // The ways in that are not the key live on the learn-key screen
@@ -1038,6 +955,26 @@ private fun BehaviourSection(p: Panels) {
                     if (on) Dictation.buzz(context, 22)
                 }
             }
+            Hairline()
+            Column(Modifier.padding(18.dp)) {
+                EvText("Media audio while speaking", type.body)
+                Spacer(Modifier.height(4.dp))
+                EvText(
+                    "Duck the volume or pause background music and media apps while you speak.",
+                    type.sub,
+                )
+                Spacer(Modifier.height(12.dp))
+                EvSegmented(
+                    options = listOf(
+                        Prefs.MEDIA_DUCK to "Duck volume",
+                        Prefs.MEDIA_PAUSE to "Pause media",
+                        Prefs.MEDIA_OFF to "Off",
+                    ),
+                    selectedId = settings.mediaDucking,
+                ) { mode ->
+                    prefs.setMediaDucking(mode)
+                }
+            }
         }
     }
 }
@@ -1220,6 +1157,7 @@ private fun GlyphArt(modifier: Modifier = Modifier, size: Dp = EV.ArtTile) {
 private fun GlyphSection(p: Panels) {
     val settings = p.settings
     val prefs = p.prefs
+    val type = LocalEvType.current
     var testRunning by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxWidth()) {
@@ -1237,6 +1175,44 @@ private fun GlyphSection(p: Panels) {
             }
 
             if (settings.glyphEnabled) {
+                Hairline()
+                Column(Modifier.padding(18.dp)) {
+                    var testingIntensity by remember { mutableStateOf(false) }
+
+                    EvText("Intensity", type.body)
+                    Spacer(Modifier.height(4.dp))
+                    EvText("Brightness level of the rear Glyph LEDs.", type.sub)
+                    Spacer(Modifier.height(12.dp))
+                    EvSegmented(
+                        options = listOf(
+                            Prefs.GLYPH_BRIGHTNESS_MIN to "Minimum",
+                            Prefs.GLYPH_BRIGHTNESS_MED to "Medium",
+                            Prefs.GLYPH_BRIGHTNESS_MAX to "Maximum",
+                        ),
+                        selectedId = settings.glyphBrightness,
+                    ) { level ->
+                        prefs.setGlyphBrightness(level)
+                        NothingGlyphController.apply(settings.copy(glyphBrightness = level))
+                        testingIntensity = true
+                        NothingGlyphController.testIntensity(level) {
+                            testingIntensity = false
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    EvButton(
+                        label = if (testingIntensity) "Testing intensity (${settings.glyphBrightness.uppercase()})..." else "Test intensity (${settings.glyphBrightness.uppercase()})",
+                        modifier = Modifier.fillMaxWidth(),
+                        kind = EvButtonKind.Primary,
+                        enabled = !testingIntensity,
+                    ) {
+                        testingIntensity = true
+                        NothingGlyphController.apply(settings)
+                        NothingGlyphController.testIntensity(settings.glyphBrightness) {
+                            testingIntensity = false
+                        }
+                    }
+                }
+
                 Hairline()
                 SettingRow(
                     title = "Live voice reaction",
@@ -1640,8 +1616,19 @@ private fun LibraryTab(setup: SetupState, settings: Settings, prefs: Prefs) {
         // ready, so it is the moment to check.
         Transcribe.sweep(context)
     }
+    val scope = rememberCoroutineScope()
     val all by NoteStore.notes.collectAsState()
     var shelf by rememberSaveable { mutableStateOf(Shelf.All) }
+    var selecting by rememberSaveable { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf(setOf<Long>()) }
+    var confirmDeleteAll by remember { mutableStateOf(false) }
+    var confirmExportAll by remember { mutableStateOf(false) }
+    var exportingToNotion by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = selecting) {
+        selecting = false
+        selectedIds = emptySet()
+    }
 
     Column(
         Modifier
@@ -1660,7 +1647,7 @@ private fun LibraryTab(setup: SetupState, settings: Settings, prefs: Prefs) {
         // The 46dp is the masthead's own top padding, kept so the page still
         // clears the status bar by the same margin every other page does.
         Spacer(Modifier.height(46.dp))
-        EvText("Your library", type.display)
+        EvText("History", type.display)
         Spacer(Modifier.height(6.dp))
         EvText(
             "Everything the key kept — notes, tasks\nand recordings.",
@@ -1668,9 +1655,199 @@ private fun LibraryTab(setup: SetupState, settings: Settings, prefs: Prefs) {
         )
 
         Spacer(Modifier.height(18.dp))
-        ShelfChips(shelf, all) { shelf = it }
+        ShelfChips(shelf, all) {
+            shelf = it
+            if (selecting) selectedIds = emptySet()
+        }
         Spacer(Modifier.height(14.dp))
-        LibraryList(shelf, all)
+
+        if (all.isNotEmpty()) {
+            val visibleNotes = all.filter { shelf.holds(it) }
+            val allSelected = visibleNotes.isNotEmpty() && visibleNotes.all { it.id in selectedIds }
+
+            if (!selecting) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    EvText("HISTORY", type.label, color = EV.Ink)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        EvButton("Select", kind = EvButtonKind.Quiet) {
+                            selecting = true
+                            selectedIds = emptySet()
+                            confirmExportAll = false
+                        }
+                        EvButton(
+                            label = if (exportingToNotion) "Exporting..." else "Export all (${visibleNotes.size})",
+                            kind = EvButtonKind.Quiet,
+                            enabled = !exportingToNotion && visibleNotes.isNotEmpty(),
+                        ) {
+                            confirmExportAll = true
+                        }
+                        EvButton("Delete all", kind = EvButtonKind.Danger) {
+                            confirmDeleteAll = true
+                        }
+                    }
+                }
+            } else {
+                Column(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        EvText(
+                            if (selectedIds.isEmpty()) "Tap notes to select" else "${selectedIds.size} of ${visibleNotes.size} selected",
+                            type.body,
+                            color = EV.Ink,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            EvButton(
+                                label = if (allSelected) "Deselect all" else "Select all",
+                                kind = EvButtonKind.Quiet,
+                            ) {
+                                selectedIds = if (allSelected) emptySet() else visibleNotes.map { it.id }.toSet()
+                            }
+                            EvButton("Cancel", kind = EvButtonKind.Quiet) {
+                                selecting = false
+                                selectedIds = emptySet()
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        EvButton(
+                            label = when {
+                                exportingToNotion -> "Exporting to Notion..."
+                                selectedIds.isEmpty() -> "Select notes to export"
+                                else -> "Export selected (${selectedIds.size}) to Notion"
+                            },
+                            modifier = Modifier.weight(1f),
+                            kind = if (selectedIds.isNotEmpty()) EvButtonKind.Primary else EvButtonKind.Quiet,
+                            enabled = !exportingToNotion && selectedIds.isNotEmpty(),
+                        ) {
+                            val toExport = all.filter { it.id in selectedIds }
+                            if (toExport.isEmpty()) {
+                                Toast.makeText(context, "Please select notes first", Toast.LENGTH_SHORT).show()
+                                return@EvButton
+                            }
+                            exportingToNotion = true
+                            scope.launch {
+                                val res = NotionExporter.exportNotes(
+                                    context,
+                                    toExport,
+                                    settings.notionToken,
+                                    settings.notionPageId,
+                                )
+                                exportingToNotion = false
+                                res.onSuccess { count ->
+                                    Toast.makeText(context, "✓ Exported $count selected note(s) to Notion (Thoughts!)", Toast.LENGTH_LONG).show()
+                                    selecting = false
+                                    selectedIds = emptySet()
+                                }.onFailure { err ->
+                                    Toast.makeText(context, "Export failed: ${err.message}", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                        if (selectedIds.isNotEmpty()) {
+                            EvButton(
+                                label = "Delete (${selectedIds.size})",
+                                kind = EvButtonKind.Danger,
+                            ) {
+                                NoteStore.deleteMultiple(context, selectedIds)
+                                selectedIds = emptySet()
+                                selecting = false
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+
+        if (confirmExportAll) {
+            val visibleNotes = all.filter { shelf.holds(it) }
+            Panel {
+                Column(Modifier.padding(16.dp)) {
+                    EvText("Export to Notion (Thoughts!)", type.title)
+                    Spacer(Modifier.height(6.dp))
+                    EvText(
+                        "Export all ${visibleNotes.size} note(s) directly as bullet points, or select specific ones?",
+                        type.sub,
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        EvButton("Select specific", Modifier.weight(1f), kind = EvButtonKind.Quiet) {
+                            confirmExportAll = false
+                            selecting = true
+                            selectedIds = emptySet()
+                        }
+                        EvButton(
+                            label = if (exportingToNotion) "Exporting..." else "Export all (${visibleNotes.size})",
+                            modifier = Modifier.weight(1f),
+                            kind = EvButtonKind.Primary,
+                            enabled = !exportingToNotion,
+                        ) {
+                            confirmExportAll = false
+                            exportingToNotion = true
+                            scope.launch {
+                                val res = NotionExporter.exportNotes(
+                                    context,
+                                    visibleNotes,
+                                    settings.notionToken,
+                                    settings.notionPageId,
+                                )
+                                exportingToNotion = false
+                                res.onSuccess { count ->
+                                    Toast.makeText(context, "✓ Exported all $count notes to Notion (Thoughts!)", Toast.LENGTH_LONG).show()
+                                }.onFailure { err ->
+                                    Toast.makeText(context, "Export failed: ${err.message}", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+        }
+
+        if (confirmDeleteAll) {
+            Panel {
+                Column(Modifier.padding(16.dp)) {
+                    EvText("Delete all history?", type.title, color = EV.Red)
+                    Spacer(Modifier.height(6.dp))
+                    EvText(
+                        "This will permanently delete all notes, tasks, and audio recordings from this device.",
+                        type.sub,
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        EvButton("Cancel", Modifier.weight(1f), kind = EvButtonKind.Quiet) {
+                            confirmDeleteAll = false
+                        }
+                        EvButton("Delete everything", Modifier.weight(1f), kind = EvButtonKind.Danger) {
+                            NoteStore.deleteAll(context)
+                            confirmDeleteAll = false
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+        }
+
+        LibraryList(
+            shelf = shelf,
+            all = all,
+            selecting = selecting,
+            selectedIds = selectedIds,
+            onToggleSelect = { id ->
+                selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
+            },
+        )
 
         // The widget invite used to be here as well as on the widgets page.
         // One card, in the one place the app keeps its widgets — see
@@ -1785,7 +1962,13 @@ private fun ShelfChip(shelf: Shelf, count: Int, selected: Boolean, onSelect: () 
  * you are looking for; older ones are a list you scroll, not a list you read.
  */
 @Composable
-private fun LibraryList(shelf: Shelf, all: List<NoteStore.Note>) {
+private fun LibraryList(
+    shelf: Shelf,
+    all: List<NoteStore.Note>,
+    selecting: Boolean = false,
+    selectedIds: Set<Long> = emptySet(),
+    onToggleSelect: (Long) -> Unit = {},
+) {
     val context = LocalContext.current
     val rows = all.filter { shelf.holds(it) }
 
@@ -1795,10 +1978,45 @@ private fun LibraryList(shelf: Shelf, all: List<NoteStore.Note>) {
         } else {
             rows.forEachIndexed { index, note ->
                 if (index > 0) Hairline()
-                when (note.kind) {
-                    NoteStore.Kind.TASK -> TaskRow(note) { openNote(context, note.id) }
-                    NoteStore.Kind.RECORDING -> RecordingRow(note) { openNote(context, note.id) }
-                    NoteStore.Kind.NOTE -> NoteRow(note) { openNote(context, note.id) }
+                val isSelected = note.id in selectedIds
+                val onClick = {
+                    if (selecting) {
+                        onToggleSelect(note.id)
+                    } else {
+                        openNote(context, note.id)
+                    }
+                }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .then(if (selecting && isSelected) Modifier.background(EV.SurfaceSunk) else Modifier),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (selecting) {
+                        Box(
+                            Modifier
+                                .padding(start = 14.dp)
+                                .size(22.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isSelected) EV.Yellow else EV.SurfaceSunk)
+                                .clickable { onToggleSelect(note.id) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (isSelected) {
+                                Canvas(Modifier.size(12.dp)) {
+                                    drawLine(EV.Background, Offset(2.dp.toPx(), 6.dp.toPx()), Offset(5.dp.toPx(), 9.dp.toPx()), 2.dp.toPx(), StrokeCap.Round)
+                                    drawLine(EV.Background, Offset(5.dp.toPx(), 9.dp.toPx()), Offset(10.dp.toPx(), 3.dp.toPx()), 2.dp.toPx(), StrokeCap.Round)
+                                }
+                            }
+                        }
+                    }
+                    Box(Modifier.weight(1f)) {
+                        when (note.kind) {
+                            NoteStore.Kind.TASK -> TaskRow(note, onOpen = onClick)
+                            NoteStore.Kind.RECORDING -> RecordingRow(note, onOpen = onClick)
+                            NoteStore.Kind.NOTE -> NoteRow(note, onOpen = onClick)
+                        }
+                    }
                 }
             }
         }
@@ -2053,7 +2271,7 @@ private fun WidgetInvite(
                     body
                 } else {
                     "This launcher will not place it for you. Press and hold the " +
-                        "wallpaper, choose Widgets, and find Essential Voice."
+                        "wallpaper, choose Widgets, and find GlyphVoice."
                 },
                 type.sub,
             )
@@ -2307,10 +2525,10 @@ internal fun OtherWaysPanel(
         SettingRow(
             title = "Quick gesture",
             sub = if (setup.assistant) {
-                "Essential Voice is the digital assistant, so the gesture starts " +
+                "GlyphVoice is the digital assistant, so the gesture starts " +
                     "a dictation."
             } else {
-                "Needs Essential Voice to be the phone's digital assistant."
+                "Needs GlyphVoice to be the phone's digital assistant."
             },
         ) {
             StatusPip(setup.assistant, if (setup.assistant) "Assistant" else "Not set")
@@ -3746,143 +3964,7 @@ private fun WaveBars(
     }
 }
 
-/**
- * The plea itself, without the card around it.
- *
- * Split out so the launcher's "I need your help" row can show exactly the same
- * words: the row draws its own red fill, and a [Panel] inside it would have been
- * a second red rectangle inside the first.
- */
-@Composable
-private fun PlayStoreBody() {
-    val type = LocalEvType.current
-    val context = LocalContext.current
 
-    Column(Modifier.padding(18.dp)) {
-            EvText("Twelve people, fourteen days", type.title, color = EV.Red)
-            Spacer(Modifier.height(6.dp))
-            EvText(
-                "I want this app on the Play Store, so that installing it is a " +
-                    "button rather than a trip to GitHub and a fight with Play " +
-                    "Protect. Google will not publish a new developer's app until " +
-                    "twelve people have kept it installed and opened it every day " +
-                    "for fourteen days straight. That is the whole hold-up.",
-                type.sub,
-            )
-            Spacer(Modifier.height(10.dp))
-            EvText(
-                "If you are going to use this anyway, that is all it takes — " +
-                    "email me and I will add you to the test.",
-                type.sub,
-            )
-            Spacer(Modifier.height(14.dp))
-            EvButton("Count me in", Modifier.fillMaxWidth()) {
-                composeEmail(
-                    context,
-                    "Essential Voice — I'll test for 14 days",
-                    "I'll keep Essential Voice installed and open it every day for " +
-                        "fourteen days. My Google account is:",
-                )
-            }
-
-            Spacer(Modifier.height(18.dp))
-            Hairline(inset = 0.dp)
-            Spacer(Modifier.height(18.dp))
-
-            EvText("Or, the shortcut", type.title, color = EV.Red)
-            Spacer(Modifier.height(6.dp))
-            EvText(
-                "The fourteen-day rule only applies to Play Console accounts made " +
-                    "after November 2023. If you have one from before then and are " +
-                    "willing to hand it over, that skips the whole thing and the app " +
-                    "goes up in days. Email me about that too.",
-                type.sub,
-            )
-            Spacer(Modifier.height(14.dp))
-            EvButton("I have an older Console", Modifier.fillMaxWidth(), kind = EvButtonKind.Quiet) {
-                composeEmail(
-                    context,
-                    "Essential Voice — Play Console account",
-                    "I have a Google Play Console account created before November " +
-                        "2023. It was made on:",
-                )
-            }
-    }
-}
-
-/**
- * A box to type an idea into, and a button that hands it to a mail app.
- *
- * There is no server behind this app and adding one for a suggestion box would
- * mean running something, paying for it, and holding other people's messages.
- * So this composes an email instead: the text goes into a draft addressed to
- * me, in whatever mail app the phone already has, and the person sending it can
- * see exactly what is being sent and press send themselves. Nothing leaves the
- * phone until they do.
- *
- * Which also means this cannot fail silently in the way a form post can — if no
- * mail app answers, the text goes to the clipboard rather than nowhere.
- */
-@Composable
-private fun FeedbackPanel() {
-    val type = LocalEvType.current
-    val context = LocalContext.current
-    var idea by rememberSaveable { mutableStateOf("") }
-    val canSend = idea.isNotBlank()
-
-    Panel {
-        Column(Modifier.padding(18.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                EvText("Got any ideas or improvements?", type.title, Modifier.weight(1f))
-                Spacer(Modifier.width(10.dp))
-                InfoDot(
-                    "The build number and phone model are added at the bottom of the " +
-                        "draft so I know what I am looking at — delete them if you " +
-                        "would rather not.",
-                )
-            }
-            Spacer(Modifier.height(4.dp))
-            EvText(
-                "I can make them possible. Write it here and it opens an email to " +
-                    "me — you send it, so you can see exactly what goes.",
-                type.sub,
-            )
-            Spacer(Modifier.height(14.dp))
-
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 116.dp)
-                    .clip(RoundedCornerShape(EV.CornerRow))
-                    .background(EV.Background)
-                    .padding(14.dp),
-            ) {
-                if (idea.isEmpty()) {
-                    EvText("Something that would make this better…", type.body, color = EV.InkFaint)
-                }
-                BasicTextField(
-                    value = idea,
-                    onValueChange = { idea = it },
-                    // Has to be as tall as the box it is drawn in. Sized to its
-                    // own one line of text it looked like a text area and
-                    // behaved like a single line: a tap anywhere below the
-                    // first line missed it and nothing focused.
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 88.dp),
-                    textStyle = type.body,
-                    cursorBrush = SolidColor(EV.Ink),
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                )
-            }
-
-            Spacer(Modifier.height(14.dp))
-            EvButton("Send it to me", Modifier.fillMaxWidth(), enabled = canSend) {
-                if (composeEmail(context, "Essential Voice \u2014 an idea", idea)) idea = ""
-            }
-        }
-    }
-}
 
 /**
  * The Gemini key, and the one sentence explaining what saying "Gemini" does.
@@ -3963,425 +4045,6 @@ private fun GeminiRow(settings: Settings, prefs: Prefs) {
     }
 }
 
-private const val FEEDBACK_EMAIL = "email2ishaanpatel@gmail.com"
-
-/**
- * Opens a mail draft with [lead] already in it. Returns true if something took it.
- *
- * The subject and body go **in the mailto URI**, not in EXTRA_SUBJECT and
- * EXTRA_TEXT. With ACTION_SENDTO the extras are advisory and Gmail drops them,
- * which is why the first version of this opened a correctly addressed but
- * completely empty draft. The query string is the part every mail client reads.
- * The extras are set as well, for the ones that only read those.
- *
- * `resolveActivity` is not used to check first: that needs a `<queries>` entry
- * for package visibility, and trying and catching answers the same question
- * without one.
- *
- * The build and the phone are appended to every one of these. Three different
- * things in the app open a draft now — an idea, and the two Play Store asks —
- * and none of them is worth answering without knowing which build is talking.
- */
-private fun composeEmail(context: Context, subject: String, lead: String): Boolean {
-    val version = runCatching { Updater.installedVersionName(context) }.getOrDefault("?")
-    val code = runCatching { Updater.installedVersionCode(context) }.getOrDefault(0)
-    val body = buildString {
-        append(lead.trim())
-        append("\n\n—\n")
-        append("Essential Voice $version (build $code)\n")
-        append("${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, ")
-        append("Android ${android.os.Build.VERSION.RELEASE}")
-    }
-
-    // Uri.encode, not Uri.Builder: the builder would encode the "?" and "&" of
-    // the query itself and hand the mail app one long address.
-    val uri = Uri.parse(
-        "mailto:" + Uri.encode(FEEDBACK_EMAIL) +
-            "?subject=" + Uri.encode(subject) +
-            "&body=" + Uri.encode(body),
-    )
-
-    val mail = Intent(Intent.ACTION_SENDTO, uri)
-        .putExtra(Intent.EXTRA_EMAIL, arrayOf(FEEDBACK_EMAIL))
-        .putExtra(Intent.EXTRA_SUBJECT, subject)
-        .putExtra(Intent.EXTRA_TEXT, body)
-
-    return runCatching {
-        context.startActivity(mail)
-        true
-    }.getOrElse {
-        // No mail app. Losing what someone just typed is the one unacceptable
-        // outcome, so it goes somewhere they can paste it from.
-        val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clip.setPrimaryClip(ClipData.newPlainText(subject, body))
-        Toast.makeText(
-            context,
-            "No email app here — it is on your clipboard. Send it to $FEEDBACK_EMAIL.",
-            Toast.LENGTH_LONG,
-        ).show()
-        false
-    }
-}
-
-/**
- * The only link in the app that asks for anything.
- *
- * It sits at the bottom, it is a link rather than a purchase, and nothing in the
- * app is behind it — the whole thing works the same whether or not anyone ever
- * presses it. That is the deal, so it is worth saying out loud here.
- */
-@Composable
-private fun SupportPanel() {
-    val type = LocalEvType.current
-    val context = LocalContext.current
-    val open = { openLink(context, PAYPAL_URL) }
-
-    Panel {
-        Column(Modifier.padding(18.dp)) {
-            EvText(
-                "This is free, has no account, no ads and no analytics, and it is " +
-                    "going to stay that way.",
-                type.body,
-            )
-            Spacer(Modifier.height(4.dp))
-            EvText(
-                "If it has saved you some typing, you can send something over. " +
-                    "Nothing changes in the app either way.",
-                type.sub,
-            )
-            Spacer(Modifier.height(14.dp))
-            EvButton("Support me on PayPal", Modifier.fillMaxWidth(), onClick = open)
-            Spacer(Modifier.height(8.dp))
-            EvText("paypal.me/ishaanpatel19", type.mono, Modifier.padding(start = 4.dp))
-        }
-
-        UpiBlock()
-
-        Hairline()
-
-        Column(Modifier.padding(18.dp)) {
-            EvText("THE FUND", type.label, color = EV.Ink)
-            Spacer(Modifier.height(12.dp))
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(230.dp)
-                    // The card's own fill, not a sunk tile: the photo has a
-                    // near-white background of its own, and anything darker
-                    // behind it shows as a rectangle around the headphones.
-                    .background(EV.Surface),
-                contentAlignment = Alignment.Center,
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.headphone_one),
-                    contentDescription = "Nothing Headphone (1)",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit,
-                )
-            }
-            Spacer(Modifier.height(14.dp))
-            EvText("Help me buy the Nothing Headphone (1)", type.body)
-            Spacer(Modifier.height(4.dp))
-            EvText(
-                "This is what the tip jar is actually for. I have been listening " +
-                    "to my own voice through the phone speaker for weeks.",
-                type.sub,
-            )
-
-            Spacer(Modifier.height(16.dp))
-            // The bar is the end of it. There was a second button under this —
-            // the same PayPal link as the one at the top of the card, under a
-            // different name — so the card asked twice and the fund read as a
-            // separate thing to buy rather than as what the tip jar is for.
-            FundProgress(raised = FUND_RAISED, target = FUND_TARGET)
-        }
-    }
-}
-
-/**
- * The same offer, for a phone in India.
- *
- * PayPal is the only other way in and it is the wrong one here: everybody this
- * app is actually shown to has three UPI apps on the phone already, and none of
- * them takes a PayPal link.
- *
- * One word and one button. The pass before this one had a heading, two lines
- * explaining what the button would do, and a QR code under them — all of it
- * arguing a case the paragraph three lines above had already made, for a button
- * whose label says the whole thing. The QR went with the words for a reason of
- * its own: a phone cannot scan its own screen, so it was only ever for somebody
- * reading this page on one device and paying from another, which is not what
- * this page is.
- *
- * The intent carries no amount, so the UPI app opens on its own "how much?"
- * screen rather than on a number this app picked.
- */
-@Composable
-private fun UpiBlock() {
-    val type = LocalEvType.current
-    val context = LocalContext.current
-
-    Hairline()
-    Column(Modifier.padding(18.dp)) {
-        // Not a heading for a section — a hinge between two buttons that do the
-        // same thing. It is the only word here because it is the only word
-        // needed: everything above it applies to this button too.
-        EvText("OR", type.label, color = EV.Ink)
-        Spacer(Modifier.height(12.dp))
-        EvButton("Support me by UPI", Modifier.fillMaxWidth()) { openUpi(context) }
-        Spacer(Modifier.height(8.dp))
-        EvText(UPI_ID, type.mono, Modifier.padding(start = 4.dp))
-    }
-}
-
-/**
- * Hands the payment to whatever UPI app is installed.
- *
- * A chooser rather than a plain view: several of these apps claim the scheme and
- * the phone's default is rarely the one somebody wants to pay from. No amount
- * and no note — this app does not get to decide either.
- */
-private fun openUpi(context: Context) {
-    val uri = Uri.parse(
-        "upi://pay?pa=" + Uri.encode(UPI_ID) +
-            "&pn=" + Uri.encode(UPI_NAME) +
-            "&cu=INR",
-    )
-    val ok = runCatching {
-        context.startActivity(
-            Intent.createChooser(Intent(Intent.ACTION_VIEW, uri), "Pay with")
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
-    }.isSuccess
-    if (ok) return
-    // No UPI app on this phone. The id is the whole of what is needed, so it
-    // goes on the clipboard rather than nowhere.
-    runCatching {
-        val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clip.setPrimaryClip(ClipData.newPlainText("UPI id", UPI_ID))
-    }
-    Toast.makeText(context, "No UPI app here — the id is on your clipboard.", Toast.LENGTH_LONG)
-        .show()
-}
-
-/**
- * Where the money goes, and the name it goes to.
- *
- * Both are Ishaan's own, given directly rather than read off the QR code that
- * used to sit under them — which is also why removing that picture cost nothing:
- * the id was never derived from it.
- */
-private const val UPI_ID = "email2ishaanpatel@okicici"
-private const val UPI_NAME = "Ishaan Patel"
-
-/** What has come in, against what the headphones cost. */
-@Composable
-private fun FundProgress(raised: Int, target: Int) {
-    val type = LocalEvType.current
-    val fraction = (raised.toFloat() / target).coerceIn(0f, 1f)
-
-    Column {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-            EvText(rupees(raised), type.title, Modifier.weight(1f), color = EV.Ink)
-            EvText("of ${rupees(target)}", type.mono)
-        }
-        Spacer(Modifier.height(10.dp))
-        // A track and a fill, both flat, both the same shape. The yellow is
-        // doing the only job it ever does here: saying which part is the
-        // answer.
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(10.dp)
-                .clip(RoundedCornerShape(5.dp))
-                .background(EV.SurfaceSunk),
-        ) {
-            Box(
-                Modifier
-                    .fillMaxWidth(fraction)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(5.dp))
-                    .background(EV.Yellow),
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-        EvText("${(fraction * 100).toInt()}% OF THE WAY THERE", type.label)
-    }
-}
-
-/** 19999 as "Rs 19,999" — Indian grouping, no library. */
-private fun rupees(amount: Int): String {
-    val digits = amount.toString()
-    if (digits.length <= 3) return "Rs $digits"
-    val head = digits.dropLast(3)
-    val tail = digits.takeLast(3)
-    val grouped = head.reversed().chunked(2).joinToString(",").reversed()
-    return "Rs $grouped,$tail"
-}
-
-/** What the headphones cost, and what has come in so far. */
-private const val FUND_TARGET = 19_999
-private const val FUND_RAISED = 1_290
-
-private const val PAYPAL_URL = "https://paypal.me/ishaanpatel19"
-
-/** Hands a URL to a browser. Nothing in this app opens a payment page itself. */
-/**
- * The last thing on the page, and the only one that costs nothing to say yes to.
- *
- * Three names and a share sheet, and nothing else on the card. The pass before
- * this one argued the case in two paragraphs above the buttons and printed the
- * link under them; at the foot of a page that has already asked for a rating,
- * an idea and a tip, a fourth paragraph is the one nobody reads. The section
- * heading says what the buttons are for, which is as much as the buttons need.
- *
- * The logos went with the words. They were somebody else's marks drawn in this
- * app's ink, and three of them stacked over three names said the same thing
- * twice — the name is the half that is unambiguous.
- *
- * Reddit and Twitter both take a link and a title in the URL, so those two open
- * a post that is already written. Instagram takes nothing — there is no web
- * intent for it — so that one copies the link and says so, which is the honest
- * version of the same button.
- */
-@Composable
-private fun SpreadPanel() {
-    val context = LocalContext.current
-
-    Panel {
-        Column(Modifier.padding(18.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                SpreadTile(
-                    label = "Reddit",
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        openLink(
-                            context,
-                            "https://www.reddit.com/submit?title=" + Uri.encode(SHARE_TITLE) +
-                                "&url=" + Uri.encode(SHARE_URL),
-                        )
-                    },
-                )
-                SpreadTile(
-                    label = "Twitter",
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        openLink(
-                            context,
-                            "https://twitter.com/intent/tweet?text=" + Uri.encode(SHARE_TEXT) +
-                                "&url=" + Uri.encode(SHARE_URL),
-                        )
-                    },
-                )
-                SpreadTile(
-                    label = "Instagram",
-                    modifier = Modifier.weight(1f),
-                    onClick = { openInstagram(context) },
-                )
-            }
-
-            Spacer(Modifier.height(10.dp))
-            EvButton("Share the app", Modifier.fillMaxWidth()) { shareApp(context) }
-        }
-    }
-}
-
-/**
- * One of the three: a word, and a fill that changes on press and does not move
- * — the same deal every other control in the app makes.
- *
- * Shorter than it was now that the mark above the word has gone: a 78dp tile
- * holding one line of text is a tile with a hole in it.
- */
-@Composable
-private fun SpreadTile(
-    label: String,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    val type = LocalEvType.current
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val fill by animateColorAsState(
-        if (pressed) EV.SurfaceSunk else EV.Background,
-        label = "spread",
-    )
-
-    Box(
-        modifier
-            .height(46.dp)
-            .clip(RoundedCornerShape(EV.CornerButton))
-            .background(fill)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        // Tighter than [EvTypography.label] on both counts, because this one
-        // has to hold "INSTAGRAM" inside a third of the card. At the page's own
-        // 11sp and 1.6 of tracking it fills the tile edge to edge on this
-        // phone, which means it is over the edge on a narrower one.
-        EvText(
-            label.uppercase(),
-            type.label.copy(fontSize = 10.sp, letterSpacing = 0.9.sp),
-            maxLines = 1,
-        )
-    }
-}
-
-/**
- * Instagram, which cannot be handed a link.
- *
- * Nothing on Instagram accepts a URL from outside — not the app, not the web
- * site — so the button does the two halves by hand: the link goes on the
- * clipboard, the toast says that it has, and then Instagram opens for the
- * paste. The clipboard write happens first, so a phone with no Instagram on it
- * still leaves you holding the link.
- */
-private fun openInstagram(context: Context) {
-    runCatching {
-        val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clip.setPrimaryClip(ClipData.newPlainText("Essential Voice", SHARE_URL))
-    }
-    Toast.makeText(context, "Link copied — paste it into your story.", Toast.LENGTH_LONG).show()
-    openLink(context, "https://www.instagram.com/")
-}
-
-/** The system share sheet, with the link and one line about what it is. */
-private fun shareApp(context: Context) {
-    val send = Intent(Intent.ACTION_SEND)
-        .setType("text/plain")
-        .putExtra(Intent.EXTRA_SUBJECT, SHARE_TITLE)
-        .putExtra(Intent.EXTRA_TEXT, "$SHARE_TEXT\n$SHARE_URL")
-    runCatching {
-        context.startActivity(
-            Intent.createChooser(send, "Share Essential Voice")
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
-    }
-}
-
-/**
- * Where the app lives, and what to say about it.
- *
- * The repository rather than any other page, because it is the one address that
- * has never moved and the one that carries both the download and the source.
- */
-private const val SHARE_URL = "https://github.com/email2ishaanpatel-collab/essential-voice"
-private const val SHARE_TITLE = "Essential Voice — hold the key, talk, and your phone types it"
-private const val SHARE_TEXT =
-    "Hold the Essential Key and talk, and your phone types what you said. " +
-        "It runs on the phone, it is free, and there is no account."
-
-private fun openLink(context: Context, url: String) {
-    runCatching {
-        context.startActivity(
-            Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
-    }
-}
 
 @Composable
 private fun Masthead(setup: SetupState, settings: Settings, prefs: Prefs) {
@@ -4409,9 +4072,9 @@ private fun Masthead(setup: SetupState, settings: Settings, prefs: Prefs) {
             // the box — adding more would push the name off on its own.
             Spacer(Modifier.width(0.dp))
             Column(Modifier.weight(1f)) {
-                EvText("Essential", type.masthead, maxLines = 1)
+                EvText("GlyphVoice", type.masthead, maxLines = 1)
                 Spacer(Modifier.height(2.dp))
-                EvText("Software for all", type.strap)
+                EvText("Built for Big Boss", type.strap)
             }
             Spacer(Modifier.width(10.dp))
             ThemeToggle(prefs)

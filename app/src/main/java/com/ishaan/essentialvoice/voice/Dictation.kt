@@ -1,5 +1,6 @@
 package com.ishaan.essentialvoice.voice
 
+import android.accessibilityservice.AccessibilityService
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
@@ -151,6 +152,12 @@ object Dictation {
         set(value) { field = value; notifyActivity() }
     private var work: Job? = null
     private var idleJob: Job? = null
+    private var pendingDetach: Runnable? = null
+
+    private fun cancelPendingDetach() {
+        pendingDetach?.let { main.removeCallbacks(it) }
+        pendingDetach = null
+    }
 
     /**
      * The note the card is currently open on, or null when the pill is a pill.
@@ -214,8 +221,13 @@ object Dictation {
 
     val isListening: Boolean get() = busy && capturing
 
+    val isCapturing: Boolean get() = capturing
+
     /** Listening, or transcribing what was just heard. */
     val isBusy: Boolean get() = busy
+
+    /** The bound AccessibilityService host, if attached from one. */
+    private var service: AccessibilityService? = null
 
     /**
      * The surfaces following along, by name.
@@ -278,9 +290,13 @@ object Dictation {
 
     /** Called by the accessibility service once the system has bound it. */
     fun attach(context: Context) {
-        val c = context.applicationContext
+        val svc = context as? AccessibilityService
+        service = svc
+        val c = context.applicationContext ?: context
         app = c
-        wm = c.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        // Prefer using the AccessibilityService's WindowManager so that TYPE_ACCESSIBILITY_OVERLAY
+        // can be used reliably without requiring SYSTEM_ALERT_WINDOW permission.
+        wm = (svc ?: c).getSystemService(Context.WINDOW_SERVICE) as WindowManager
         prefs = Prefs.get(c)
         // Read once, here, so the first dictation of the day already knows the
         // full language tag to ask for. Without it the first one falls back to
@@ -288,12 +304,16 @@ object Dictation {
         // catalogue would only have been filled by somebody opening the
         // language picker. One query, and it answers for all hundred languages.
         GoogleSpeech.refreshCatalogue(c)
-        Log.i(TAG, "ready — ${WhisperEngine.systemInfo()}")
+        Log.i(TAG, "ready (svc=${svc != null}) — ${WhisperEngine.systemInfo()}")
     }
 
     fun detach() {
+        cancelPendingDetach()
+        service = null
+        MediaFocusController.release()
         disarmWatchdog()
         work?.cancel()
+        work = null
         idleJob?.cancel()
         probeJob?.cancel()
         slideAnim?.cancel()
@@ -324,11 +344,38 @@ object Dictation {
      * leave it believing it owned a dictation it had never started.
      */
     fun begin(): Boolean {
-        val ctx = app ?: return false
-        val prefs = prefs ?: return false
-        if (busy) return false
+        Log.i(TAG, "begin() called: busy=$busy capturing=$capturing service=${service != null}")
+        val ctx = app ?: run {
+            Log.e(TAG, "begin() failed: app context is null")
+            return false
+        }
+        val prefs = prefs ?: run {
+            Log.e(TAG, "begin() failed: prefs is null")
+            return false
+        }
+        cancelPendingDetach()
+        slideAnim?.cancel()
+        if (busy) {
+            // If busy is true, but we are NOT capturing audio (e.g. idle timeout, failed previous finish),
+            // reset state synchronously so we don't permanently deadlock the key or leave lingering timers.
+            if (!capturing) {
+                Log.w(TAG, "begin() found busy=true but capturing=false; resetting state immediately")
+                work?.cancel()
+                work = null
+                google?.cancel()
+                google = null
+                recorder?.stop()
+                capturing = false
+                busy = false
+            } else {
+                Log.w(TAG, "begin() rejected: already busy and capturing")
+                return false
+            }
+        }
 
-        if (!Settings.canDrawOverlays(ctx)) {
+        val hasOverlay = service != null || Settings.canDrawOverlays(ctx)
+        if (!hasOverlay) {
+            Log.e(TAG, "begin() failed: cannot draw overlays and no service attached")
             toast("Essential Voice needs \"draw over other apps\"")
             return false
         }
@@ -378,9 +425,13 @@ object Dictation {
             cardOpen && attached -> pill
             else -> attachPill()
         }
-        if (p == null && !suppressPill) return false
+        if (p == null && !suppressPill) {
+            Log.e(TAG, "begin() failed: attachPill returned null")
+            return false
+        }
         busy = true
         p?.reset(PillView.State.LISTENING)
+        MediaFocusController.acquire(ctx, prefs.now.mediaDucking)
         // Armed for the length of the dictation and disarmed by finish(), so the
         // pill only eats touches while there is something a swipe could mean.
         p?.onSwipeAway = { cancel() }
@@ -396,6 +447,7 @@ object Dictation {
             holdingKey = true
             if (!beginGoogle(ctx)) {
                 holdingKey = false
+                MediaFocusController.release()
                 return false
             }
             capturing = true
@@ -685,7 +737,8 @@ object Dictation {
      * and having two copies of this would be two places for the note command to
      * drift apart.
      */
-    private suspend fun handleTranscript(ctx: Context, text: String) {
+    private suspend fun handleTranscript(ctx: Context, rawText: String) {
+        val text = com.ishaan.essentialvoice.whisper.HinglishConverter.process(rawText)
         // "note ..." starts one; once the card is open everything lands in it
         // until it is closed.
         val hit = NoteCommand.parse(text)
@@ -724,6 +777,7 @@ object Dictation {
         val prefs = prefs ?: return
         Log.i(TAG, "end(heldMs=$heldMs) busy=$busy capturing=$capturing google=${google != null}")
         if (!busy || !capturing) return
+        MediaFocusController.release()
 
         // On Google's engine the transcript arrives through onGoogleResult, so
         // all this does is ask for it. capturing stays set until it lands, so
@@ -910,12 +964,15 @@ object Dictation {
      */
     private fun forceReset(reason: String) {
         Log.w(TAG, "forcing a reset: $reason")
+        cancelPendingDetach()
         disarmWatchdog()
         WhisperEngine.abort()
         google?.cancel()
         google = null
         work?.cancel()
+        work = null
         probeJob?.cancel()
+        probeJob = null
         recorder?.release()
         recorder = null
         capturing = false
@@ -924,11 +981,14 @@ object Dictation {
 
     fun cancel() {
         Log.i(TAG, "cancel() busy=$busy capturing=$capturing")
+        MediaFocusController.release()
+        cancelPendingDetach()
         if (!busy) return
         holdingKey = false
         segments.clear()
         WhisperEngine.abort()
         work?.cancel()
+        work = null
         google?.cancel()
         google = null
         if (capturing) { recorder?.stop(); capturing = false }
@@ -1547,29 +1607,23 @@ object Dictation {
             toast(text)
             landed = true
         }
+
+        // Always save voice dictations into History (NoteStore)
+        if (text.isNotBlank()) {
+            runCatching {
+                com.ishaan.essentialvoice.notes.NoteStore.start(ctx, text, com.ishaan.essentialvoice.notes.NoteStore.Kind.NOTE)
+            }
+        }
+
         return landed
     }
 
     /**
-     * Put the transcript on the clipboard, flagged so the system keeps it out of
-     * clipboard history and out of the paste toast.
-     *
-     * The paste route in
-     * [com.ishaan.essentialvoice.trigger.EssentialKeyService.insertText] has
-     * always marked its clip sensitive, for the reason that applies just as much
-     * here: this is dictation, and it may well be a message, an address or a
-     * password said out loud. This path — "copy to clipboard", and the fallback
-     * when there was nowhere to type — did not, so the one setting a user turns
-     * on to *keep* a transcript was also the one that put it in a system list
-     * they never asked for.
+     * Put the transcript on the clipboard so it can be pasted anywhere.
      */
     private fun copy(ctx: Context, text: String) {
         val clip = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val data = ClipData.newPlainText("Essential Voice", text).apply {
-            description.extras = android.os.PersistableBundle().apply {
-                putBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE, true)
-            }
-        }
+        val data = ClipData.newPlainText("GlyphVoice", text)
         clip.setPrimaryClip(data)
     }
 
@@ -1578,6 +1632,8 @@ object Dictation {
      * then slide the pill back out the way it came.
      */
     private fun finish(state: PillView.State, message: String?) {
+        MediaFocusController.release()
+        cancelPendingDetach()
         // The dictation is over one way or another; the backstop has nothing
         // left to catch.
         disarmWatchdog()
@@ -1609,12 +1665,15 @@ object Dictation {
             p.morphTo(state)
             if (state == PillView.State.DONE) tick(24)
             val linger = if (state == PillView.State.DONE) 420L else 620L
-            main.postDelayed({
+            val r = Runnable {
+                pendingDetach = null
                 detachPill()
                 busy = false
                 suppressPill = false
                 scheduleIdleUnload()
-            }, linger)
+            }
+            pendingDetach = r
+            main.postDelayed(r, linger)
         }
 
         // The probe can hear "note" in the opening and be wrong about it — the
@@ -1666,19 +1725,28 @@ object Dictation {
      * the field being typed into must keep input focus or the text has nowhere
      * to land.
      */
-    private fun buildParams() = WindowManager.LayoutParams(
-        dp(PillView.WINDOW_W_DP).toInt(),
-        dp(PillView.WINDOW_H_DP).toInt(),
-        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-        PixelFormat.TRANSLUCENT,
-    ).apply {
-        gravity = Gravity.TOP or Gravity.START
-        layoutInDisplayCutoutMode =
-            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+    private fun buildParams(): WindowManager.LayoutParams {
+        val ctx = app
+        val useAccessibilityOverlay = service != null && (ctx == null || !Settings.canDrawOverlays(ctx))
+        val windowType = if (useAccessibilityOverlay) {
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+        } else {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        }
+        return WindowManager.LayoutParams(
+            dp(PillView.WINDOW_W_DP).toInt(),
+            dp(PillView.WINDOW_H_DP).toInt(),
+            windowType,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        }
     }
 
     /**
@@ -1822,10 +1890,23 @@ object Dictation {
 
         if (!attached) {
             runCatching { wm.addView(group, lp) }
-                .onFailure { Log.e(TAG, "addView failed", it); return null }
+                .onFailure { err ->
+                    Log.e(TAG, "addView failed with type=${lp.type}", err)
+                    if (service != null && lp.type != WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY) {
+                        lp.type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                        runCatching { wm.addView(group, lp) }
+                            .onFailure { err2 ->
+                                Log.e(TAG, "fallback addView with TYPE_ACCESSIBILITY_OVERLAY also failed", err2)
+                                return null
+                            }
+                    } else {
+                        return null
+                    }
+                }
             attached = true
         } else {
             runCatching { wm.updateViewLayout(group, lp) }
+                .onFailure { Log.w(TAG, "updateViewLayout failed", it) }
         }
 
         slideTo(targetX, 380, ENTER, null)
@@ -1868,7 +1949,8 @@ object Dictation {
         val lp = params ?: return
         val wm = wm ?: return
         slideAnim?.cancel()
-        slideAnim = ValueAnimator.ofInt(lp.x, toX).apply {
+        var cancelled = false
+        val anim = ValueAnimator.ofInt(lp.x, toX).apply {
             duration = ms
             interpolator = interp
             addUpdateListener {
@@ -1877,10 +1959,16 @@ object Dictation {
                 if (attached && v != null) runCatching { wm.updateViewLayout(v, lp) }
             }
             addListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) { onEnd?.invoke() }
+                override fun onAnimationCancel(animation: Animator) {
+                    cancelled = true
+                }
+                override fun onAnimationEnd(animation: Animator) {
+                    if (!cancelled) onEnd?.invoke()
+                }
             })
             start()
         }
+        slideAnim = anim
     }
 
     // ---- odds and ends -----------------------------------------------------

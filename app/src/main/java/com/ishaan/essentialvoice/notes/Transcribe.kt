@@ -145,8 +145,9 @@ object Transcribe {
                 result.fold(
                     onSuccess = { text ->
                         val ms = System.currentTimeMillis() - started
-                        Log.i(TAG, "recording ${next.id} decoded in ${ms}ms: \"$text\"")
-                        NoteStore.setTranscript(app, next.id, text)
+                        val processed = com.ishaan.essentialvoice.whisper.HinglishConverter.process(text)
+                        Log.i(TAG, "recording ${next.id} decoded in ${ms}ms: \"$processed\"")
+                        NoteStore.setTranscript(app, next.id, processed)
                     },
                     onFailure = { t ->
                         Log.w(TAG, "recording ${next.id} failed to decode", t)

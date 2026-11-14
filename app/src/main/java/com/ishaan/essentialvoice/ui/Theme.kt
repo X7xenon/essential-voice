@@ -100,7 +100,7 @@ private val LightPalette = Palette(
 /**
  * Not the light palette with the numbers flipped.
  *
- * The page is true black, at Ishaan's request — it was #0E0E10 to keep the
+ * The page is true black, at Big Boss's request — it was #0E0E10 to keep the
  * near-black card above it from disappearing on an OLED, and the card is
  * #191A1C, which still reads as a step up from nothing. What it does mean is
  * that [Palette.cta], the black button, must never be put straight on the page:

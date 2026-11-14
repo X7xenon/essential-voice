@@ -211,8 +211,16 @@ data class Settings(
     val glyphSuccessFlash: Boolean,
     /** Rear indicator when soft keyboard is open on screen. */
     val glyphKeyboardOpen: Boolean,
+    /** Glyph intensity / brightness: "max", "med", "min". */
+    val glyphBrightness: String,
+    /** Notion API Integration Token. */
+    val notionToken: String,
+    /** Notion Target Page ID (e.g. Thoughts! notebook). */
+    val notionPageId: String,
     /** Essential Key triggers voice only when keyboard is open. */
     val triggerKeyboardOnly: Boolean,
+    /** Media audio focus mode while speaking: "duck", "pause", or "off". */
+    val mediaDucking: String,
 ) {
     val hasTrigger: Boolean get() = triggerKeyCode > 0 || triggerScanCode > 0
 
@@ -247,7 +255,7 @@ class Prefs private constructor(context: Context) {
 
     private fun read() = Settings(
         triggerKeyCode = sp.getInt(K_KEYCODE, -1),
-        triggerScanCode = sp.getInt(K_SCANCODE, -1),
+        triggerScanCode = sp.getInt(K_SCANCODE, DEFAULT_TRIGGER_SCANCODE),
         consumeKey = sp.getBoolean(K_CONSUME, true),
         holdMs = sp.getInt(K_HOLD_MS, 220),
         pillX = sp.getFloat(K_PILL_X, 0.12f),
@@ -337,7 +345,7 @@ class Prefs private constructor(context: Context) {
         typeIntoField = true,
         copyToClipboard = true,
         haptics = sp.getBoolean(K_HAPTICS, true),
-        updateNotices = sp.getBoolean(K_UPDATE_NOTICES, true),
+        updateNotices = sp.getBoolean(K_UPDATE_NOTICES, false),
         widgetNotes = sp.getBoolean(K_W_NOTES, true),
         widgetTasks = sp.getBoolean(K_W_TASKS, true),
         widgetRecordings = sp.getBoolean(K_W_RECORDINGS, true),
@@ -351,7 +359,11 @@ class Prefs private constructor(context: Context) {
         glyphThinking = sp.getBoolean(K_GLYPH_THINKING, false),
         glyphSuccessFlash = sp.getBoolean(K_GLYPH_SUCCESS_FLASH, false),
         glyphKeyboardOpen = sp.getBoolean(K_GLYPH_KEYBOARD_OPEN, false),
+        glyphBrightness = sp.getString(K_GLYPH_BRIGHTNESS, GLYPH_BRIGHTNESS_MAX) ?: GLYPH_BRIGHTNESS_MAX,
+        notionToken = sp.getString(K_NOTION_TOKEN, DEFAULT_NOTION_TOKEN) ?: DEFAULT_NOTION_TOKEN,
+        notionPageId = sp.getString(K_NOTION_PAGE_ID, DEFAULT_NOTION_PAGE_ID) ?: DEFAULT_NOTION_PAGE_ID,
         triggerKeyboardOnly = sp.getBoolean(K_TRIGGER_KEYBOARD_ONLY, false),
+        mediaDucking = sp.getString(K_MEDIA_DUCKING, MEDIA_DUCK) ?: MEDIA_DUCK,
     )
 
     private fun readGame(): GameProfile {
@@ -551,7 +563,11 @@ class Prefs private constructor(context: Context) {
     fun setGlyphThinking(v: Boolean) = sp.edit().putBoolean(K_GLYPH_THINKING, v).apply()
     fun setGlyphSuccessFlash(v: Boolean) = sp.edit().putBoolean(K_GLYPH_SUCCESS_FLASH, v).apply()
     fun setGlyphKeyboardOpen(v: Boolean) = sp.edit().putBoolean(K_GLYPH_KEYBOARD_OPEN, v).apply()
+    fun setGlyphBrightness(v: String) = sp.edit().putString(K_GLYPH_BRIGHTNESS, v).apply()
+    fun setNotionToken(v: String) = sp.edit().putString(K_NOTION_TOKEN, v.trim()).apply()
+    fun setNotionPageId(v: String) = sp.edit().putString(K_NOTION_PAGE_ID, v.trim()).apply()
     fun setTriggerKeyboardOnly(v: Boolean) = sp.edit().putBoolean(K_TRIGGER_KEYBOARD_ONLY, v).apply()
+    fun setMediaDucking(v: String) = sp.edit().putString(K_MEDIA_DUCKING, v).apply()
 
     /**
      * Whether the one first-run question has been asked.
@@ -702,6 +718,8 @@ class Prefs private constructor(context: Context) {
         const val THEME_LIGHT = "light"
         const val THEME_DARK = "dark"
 
+        const val DEFAULT_TRIGGER_SCANCODE = 250
+
         private const val K_KEYCODE = "trigger_keycode"
         private const val K_SCANCODE = "trigger_scancode"
         private const val K_CONSUME = "consume_key"
@@ -774,7 +792,22 @@ class Prefs private constructor(context: Context) {
         private const val K_GLYPH_THINKING = "glyph_thinking"
         private const val K_GLYPH_SUCCESS_FLASH = "glyph_success_flash"
         private const val K_GLYPH_KEYBOARD_OPEN = "glyph_keyboard_open"
+        private const val K_GLYPH_BRIGHTNESS = "glyph_brightness"
+        const val GLYPH_BRIGHTNESS_MIN = "min"
+        const val GLYPH_BRIGHTNESS_MED = "med"
+        const val GLYPH_BRIGHTNESS_MAX = "max"
+
+        const val DEFAULT_NOTION_TOKEN = ""
+        const val DEFAULT_NOTION_PAGE_ID = ""
+        private const val K_NOTION_TOKEN = "notion_token"
+        private const val K_NOTION_PAGE_ID = "notion_page_id"
+
         private const val K_TRIGGER_KEYBOARD_ONLY = "trigger_keyboard_only"
+
+        const val MEDIA_DUCK = "duck"
+        const val MEDIA_PAUSE = "pause"
+        const val MEDIA_OFF = "off"
+        private const val K_MEDIA_DUCKING = "media_ducking"
 
         @Volatile private var instance: Prefs? = null
 

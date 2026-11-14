@@ -90,6 +90,7 @@ object WhisperEngine {
      * command word the model cannot hear is not a command.
      */
     private const val VOCAB_PROMPT = "Gemini. Note. Task. Record."
+    private const val HINGLISH_PROMPT = "Bhai, kaise ho? Note. Task. Gemini."
 
     /**
      * Load the configured tier if it is not already resident. Safe to call from
@@ -156,19 +157,12 @@ object WhisperEngine {
                 val p = ptr
                 if (p == 0L) return@withLock Result.failure(IllegalStateException("Model unloaded"))
 
-                // English, stated rather than detected, and stated as a
-                // constant rather than read from the setting. Every tier here
-                // is an `.en` build — see [ModelCatalog] — so English is not
-                // the language that happens to be chosen, it is the only one
-                // the loaded model has weights for. Passing the preference
-                // instead would let one stale pair of settings ask an
-                // English-only model for Hindi, which is not a worse transcript
-                // but a different alphabet. Non-English is Google's; the
-                // pairing is kept in [com.ishaan.essentialvoice.Prefs].
+                val langCode = if (tier.isHinglish) "auto" else Languages.whisperCode(Languages.DEFAULT)
+                val prompt = if (tier.isHinglish) HINGLISH_PROMPT else VOCAB_PROMPT
                 val text = runCatching {
                     WhisperLib.nativeTranscribe(
-                        p, audio, threads, Languages.whisperCode(Languages.DEFAULT), false,
-                        tier.beamSize, tier.bestOf, 0.6f, VOCAB_PROMPT,
+                        p, audio, threads, langCode, false,
+                        tier.beamSize, tier.bestOf, 0.6f, prompt,
                         audioCtx, singleSegment,
                     )
                 }.getOrElse { return@withLock Result.failure(it) }

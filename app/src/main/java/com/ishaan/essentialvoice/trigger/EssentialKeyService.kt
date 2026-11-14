@@ -291,26 +291,26 @@ class EssentialKeyService : AccessibilityService() {
 
                 pendingStart?.let { handler.removeCallbacks(it) }
                 val r = Runnable {
-                    // Only claim the hold if a dictation actually started. It
-                    // does not when one is already running — a toggle from the
-                    // power button or the island, or the tail of the previous
-                    // press still finishing — and setting this unconditionally
-                    // meant the release below ended a dictation this key never
-                    // began.
+                    Log.i(TAG, "hold timer (${settings.holdMs}ms) fired, calling startDictation()")
                     holding = startDictation()
+                    Log.i(TAG, "startDictation returned: holding=$holding")
                 }
                 pendingStart = r
                 handler.postDelayed(r, settings.holdMs.toLong())
             }
 
             KeyEvent.ACTION_UP -> {
-                Log.i(TAG, "key up after ${event.eventTime - downAt}ms, holding=$holding")
+                val heldMs = event.eventTime - downAt
+                Log.i(TAG, "key up after ${heldMs}ms, holding=$holding")
                 pendingStart?.let { handler.removeCallbacks(it) }
                 pendingStart = null
 
                 if (holding) {
                     holding = false
-                    endDictation(event.eventTime - downAt)
+                    endDictation(heldMs)
+                } else if (Dictation.isBusy) {
+                    Log.w(TAG, "recovering desynced/stuck dictation on key up")
+                    Dictation.cancel()
                 }
             }
         }
@@ -409,11 +409,7 @@ class EssentialKeyService : AccessibilityService() {
      * message, an address or a password spoken out loud.
      */
     private fun dictatedClip(text: String): ClipData =
-        ClipData.newPlainText("Essential Voice", text).apply {
-            description.extras = PersistableBundle().apply {
-                putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
-            }
-        }
+        ClipData.newPlainText("GlyphVoice", text)
 
     /**
      * Give the clipboard back after a paste.

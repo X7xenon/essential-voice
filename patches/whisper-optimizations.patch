@@ -1,0 +1,69 @@
+﻿diff --git a/src/whisper.cpp b/src/whisper.cpp
+index dd8bd93..2054020 100644
+--- a/src/whisper.cpp
++++ b/src/whisper.cpp
+@@ -6981,6 +6981,15 @@ int whisper_full_with_state(
+         }
+     }
+ 
++    // overwrite audio_ctx, max allowed is hparams.n_audio_ctx
++    if (params.audio_ctx > whisper_n_audio_ctx(ctx)) {
++        WHISPER_LOG_ERROR("%s: audio_ctx is larger than the maximum allowed (%d > %d)\n", __func__, params.audio_ctx, whisper_n_audio_ctx(ctx));
++        return -5;
++    }
++    state->exp_n_audio_ctx = params.audio_ctx;
++
++    bool already_encoded_at_0 = false;
++
+     // auto-detect language if not specified
+     if (params.language == nullptr || strlen(params.language) == 0 || strcmp(params.language, "auto") == 0 || params.detect_language) {
+         std::vector<float> probs(whisper_lang_max_id() + 1, 0.0f);
+@@ -7000,10 +7009,21 @@ int whisper_full_with_state(
+         state->lang_id = lang_id;
+         params.language = whisper_lang_str(lang_id);
+ 
++        // Strictly support only TWO languages: English and Hinglish (Roman Hindi).
++        // If the speech is not English ("en"), treat it as Hindi ("hi") so Whisper emits Hindi tokens
++        // which HinglishConverter seamlessly turns into Romanized Hinglish. This completely eliminates
++        // Urdu (Perso-Arabic), Punjabi, or any other script.
++        if (params.language && std::strcmp(params.language, "en") != 0) {
++            params.language = "hi";
++            state->lang_id = whisper_lang_id("hi");
++        }
++
+         WHISPER_LOG_INFO("%s: auto-detected language: %s (p = %f)\n", __func__, params.language, probs[whisper_lang_id(params.language)]);
+         if (params.detect_language) {
+             return 0;
+         }
++
++        already_encoded_at_0 = true;
+     }
+ 
+     if (params.token_timestamps) {
+@@ -7130,13 +7150,6 @@ int whisper_full_with_state(
+         }
+     }
+ 
+-    // overwrite audio_ctx, max allowed is hparams.n_audio_ctx
+-    if (params.audio_ctx > whisper_n_audio_ctx(ctx)) {
+-        WHISPER_LOG_ERROR("%s: audio_ctx is larger than the maximum allowed (%d > %d)\n", __func__, params.audio_ctx, whisper_n_audio_ctx(ctx));
+-        return -5;
+-    }
+-    state->exp_n_audio_ctx = params.audio_ctx;
+-
+     // these tokens determine the task that will be performed
+     std::vector<whisper_token> prompt_init = { whisper_token_sot(ctx), };
+ 
+@@ -7203,8 +7216,10 @@ int whisper_full_with_state(
+             }
+         }
+ 
+-        // encode audio features starting at offset seek
+-        if (!whisper_encode_internal(*ctx, *state, seek, params.n_threads, params.abort_callback, params.abort_callback_user_data)) {
++        // encode audio features starting at offset seek (skip redundant re-encode if auto-detect already encoded seek 0)
++        if (seek == 0 && already_encoded_at_0) {
++            already_encoded_at_0 = false;
++        } else if (!whisper_encode_internal(*ctx, *state, seek, params.n_threads, params.abort_callback, params.abort_callback_user_data)) {
+             WHISPER_LOG_ERROR("%s: failed to encode\n", __func__);
+             return -6;
+         }

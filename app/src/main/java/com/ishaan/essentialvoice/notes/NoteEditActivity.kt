@@ -61,6 +61,10 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import com.ishaan.essentialvoice.Prefs
+import com.ishaan.essentialvoice.notion.NotionExporter
+import android.widget.Toast
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.ishaan.essentialvoice.ui.EV
 import com.ishaan.essentialvoice.ui.EssentialVoiceTheme
 import com.ishaan.essentialvoice.ui.EvButton
@@ -293,8 +297,45 @@ private fun NoteEditor(
         Row(
             Modifier.fillMaxWidth().padding(bottom = 18.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             EvButton("Delete", kind = EvButtonKind.Danger, onClick = onDelete)
+            val currentText = value.text.trim()
+            if (currentText.isNotBlank()) {
+                val scope = rememberCoroutineScope()
+                val context = LocalContext.current
+                var exporting by remember { mutableStateOf(false) }
+                EvButton(
+                    label = if (exporting) "Exporting..." else "Export to Notion",
+                    kind = EvButtonKind.Quiet,
+                    enabled = !exporting,
+                ) {
+                    exporting = true
+                    scope.launch {
+                        val prefs = Prefs.get(context)
+                        val settings = prefs.now
+                        val noteToExport = note?.copy(text = currentText)
+                            ?: NoteStore.Note(
+                                id = System.currentTimeMillis(),
+                                createdAt = System.currentTimeMillis(),
+                                text = currentText,
+                                kind = kind ?: NoteStore.Kind.NOTE,
+                            )
+                        val res = NotionExporter.exportNotes(
+                            context,
+                            listOf(noteToExport),
+                            settings.notionToken,
+                            settings.notionPageId,
+                        )
+                        exporting = false
+                        res.onSuccess {
+                            Toast.makeText(context, "✓ Exported to Notion (Thoughts!)", Toast.LENGTH_SHORT).show()
+                        }.onFailure {
+                            Toast.makeText(context, "Export failed: ${it.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
             EvButton("Done", Modifier.weight(1f), onClick = onDone)
         }
     }

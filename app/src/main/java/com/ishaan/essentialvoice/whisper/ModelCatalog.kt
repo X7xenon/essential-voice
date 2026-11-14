@@ -11,11 +11,11 @@ import java.io.File
  * and treats "the file is this many bytes" as the only proof a download
  * finished, so a wrong number here is a model that can never install.
  */
-data class ModelVariant(val fileName: String, val bytes: Long) {
+data class ModelVariant(val fileName: String, val bytes: Long, val downloadUrl: String? = null) {
 
     val sizeMb: Int get() = ((bytes + 500_000) / 1_000_000).toInt()
 
-    val url: String get() = "${ModelCatalog.BASE_URL}$fileName"
+    val url: String get() = downloadUrl ?: "${ModelCatalog.BASE_URL}$fileName"
 
     fun file(context: Context): File = File(ModelCatalog.dir(context), fileName)
 
@@ -26,7 +26,7 @@ data class ModelVariant(val fileName: String, val bytes: Long) {
 }
 
 /**
- * The quality toggle, expressed as four settings that were measured on this
+ * The quality toggle, expressed as settings that were measured on this
  * phone rather than guessed.
  *
  * [millisPer10s] is the wall time whisper.cpp took on a CMF Phone 2 Pro for an
@@ -39,36 +39,19 @@ data class ModelVariant(val fileName: String, val bytes: Long) {
  * Neither is a dictation tool. Quantised `small.en-q5_1` was also slower than
  * fp16 here (7.1s against 5.8s): the Dimensity does fp16 natively, so
  * dequantising costs time and buys nothing but disk.
- *
- * ------------------------------------------------------ English only, on purpose
- *
- * Every tier names one file, and it is the `.en` build. There used to be a
- * multilingual variant beside each of them and it was removed rather than
- * defended: OpenAI trained these twice, once on English alone and once on
- * ninety-nine more languages in the *same* parameter budget, and at these sizes
- * the second training does not survive the split. `base` multilingual is around
- * 15-20% WER on Spanish and past 80% on Hindi — not "a little worse", unusable
- * — and `small`, the only tier that is arguable, still sits in the high
- * thirties on Hindi while costing 487MB and 5.8s per ten seconds of speech.
- *
- * There is no larger model to escape into: `medium.en-q5_0` spends 19.6s in the
- * encoder alone on this SoC and `large-v3-turbo-q5_0` 32.6s, both fixed costs
- * no thread count moves. And the phone already carries a recogniser that does
- * a hundred languages offline and instantly. So whisper listens in English, and
- * every other language is Google's — see [com.ishaan.essentialvoice.Prefs.setLanguage],
- * which keeps that pairing so no combination on screen can be a broken one.
  */
 data class QualityTier(
     val id: String,
     val label: String,
     val sub: String,
-    /** The `.en` model. whisper only ever listens in English; see above. */
+    /** The model file to load. */
     val model: ModelVariant,
     /** >1 selects beam search; 1 means greedy sampling. */
     val beamSize: Int,
     /** Candidates the sampler keeps. */
     val bestOf: Int,
     val millisPer10s: Int,
+    val isHinglish: Boolean = false,
 ) {
     /** Human reading of [millisPer10s]: "1.5s", "6s". */
     val waitLabel: String
@@ -85,49 +68,67 @@ data class QualityTier(
 object ModelCatalog {
 
     const val BASE_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/"
-    const val DEFAULT_TIER_ID = "balanced"
+    const val DEFAULT_TIER_ID = "hinglish_fast"
 
     val tiers = listOf(
         QualityTier(
-            id = "fast",
-            label = "Fast",
-            sub = "Short commands and notes to self. Will miss names and jargon.",
-            model = ModelVariant("ggml-tiny.en.bin", 77_704_715L),
+            id = "hinglish_fast",
+            label = "Hinglish Fast",
+            sub = "Whisper Small Multilingual (465 MB). High accuracy English & Hinglish in ~3-4 seconds.",
+            model = ModelVariant(
+                fileName = "ggml-small.bin",
+                bytes = 487_601_967L,
+                downloadUrl = "${BASE_URL}ggml-small.bin",
+            ),
             beamSize = 1,
-            bestOf = 2,
+            bestOf = 1,
+            millisPer10s = 3_000,
+            isHinglish = true,
+        ),
+        QualityTier(
+            id = "hinglish_instant",
+            label = "Hinglish Instant",
+            sub = "Whisper Base Multilingual (141 MB). Ultra-fast 1.5s transcription for everyday voice.",
+            model = ModelVariant(
+                fileName = "ggml-base.bin",
+                bytes = 147_951_465L,
+                downloadUrl = "${BASE_URL}ggml-base.bin",
+            ),
+            beamSize = 1,
+            bestOf = 1,
             millisPer10s = 1_500,
+            isHinglish = true,
         ),
         QualityTier(
             id = "balanced",
-            label = "Balanced",
-            sub = "The everyday setting. Clean punctuation on ordinary speech.",
+            label = "Balanced (EN)",
+            sub = "The everyday English setting. Clean punctuation on ordinary speech.",
             model = ModelVariant("ggml-base.en.bin", 147_964_211L),
             beamSize = 1,
-            bestOf = 2,
-            millisPer10s = 2_200,
+            bestOf = 1,
+            millisPer10s = 1_800,
         ),
         QualityTier(
             id = "accurate",
-            label = "Accurate",
-            sub = "Holds up to accents, background noise and technical words.",
+            label = "Accurate (EN)",
+            sub = "English Small model. Holds up to accents, background noise and technical words.",
             model = ModelVariant("ggml-small.en.bin", 487_614_201L),
             beamSize = 1,
-            bestOf = 2,
-            millisPer10s = 5_800,
+            bestOf = 1,
+            millisPer10s = 3_500,
         ),
         QualityTier(
-            id = "maximum",
-            label = "Maximum",
-            sub = "The Accurate model, searched harder. Nothing extra to download — " +
-                "it just thinks for longer before committing to a word.",
-            model = ModelVariant("ggml-small.en.bin", 487_614_201L),
-            beamSize = 5,
-            bestOf = 5,
-            millisPer10s = 7_800,
+            id = "fast",
+            label = "Fast (EN)",
+            sub = "Short commands and notes to self. English tiny model.",
+            model = ModelVariant("ggml-tiny.en.bin", 77_704_715L),
+            beamSize = 1,
+            bestOf = 1,
+            millisPer10s = 1_200,
         ),
     )
 
-    fun byId(id: String): QualityTier = tiers.firstOrNull { it.id == id } ?: tiers[1]
+    fun byId(id: String): QualityTier = tiers.firstOrNull { it.id == id } ?: tiers.first { it.id == DEFAULT_TIER_ID }
 
     fun dir(context: Context): File =
         File(context.filesDir, "models").apply { if (!exists()) mkdirs() }

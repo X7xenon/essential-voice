@@ -225,8 +225,10 @@ Java_com_ishaan_essentialvoice_whisper_WhisperLib_nativeTranscribe(
     if (language) {
         lang = env->GetStringUTFChars(language, nullptr);
         p.language = lang;
-        p.detect_language = (std::strcmp(lang, "auto") == 0);
+    } else {
+        p.language = "auto";
     }
+    p.detect_language = false;
 
     const char *prompt = nullptr;
     if (initial_prompt) {
@@ -243,6 +245,7 @@ Java_com_ishaan_essentialvoice_whisper_WhisperLib_nativeTranscribe(
         LOGW("whisper_full failed");
     } else {
         const int n = whisper_full_n_segments(ctx);
+        LOGI("whisper_full completed with %d segments, lang: %s", n, p.language ? p.language : "unknown");
         for (int i = 0; i < n; i++) {
             std::string seg = whisper_full_get_segment_text(ctx, i);
             if (is_noise_segment(seg)) continue;
