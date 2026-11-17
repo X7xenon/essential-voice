@@ -34,10 +34,19 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
+    companion object {
+        const val EXTRA_TAB = "extra_tab"
+        const val TAB_LIBRARY = "library"
+        const val TAB_SETTINGS = "settings"
+    }
+
     private lateinit var prefs: Prefs
 
     /** Permissions live outside the settings store, so they get their own state. */
     private var setupState by mutableStateOf<SetupState?>(null)
+
+    /** Tab requested by an external shortcut (e.g. Essential Key + Vol Down). */
+    private var requestedTab by mutableStateOf<String?>(null)
 
     private val micPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { refresh() }
@@ -51,6 +60,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        requestedTab = intent?.getStringExtra(EXTRA_TAB)
         // The palette is set before the first frame rather than inside
         // composition, so the window and the system bars agree with the page
         // from the very first pixel. A change of system theme recreates the
@@ -152,6 +162,8 @@ class MainActivity : ComponentActivity() {
                             refresh()
                         },
                         onCancelDownload = { ModelDownloader.cancel() },
+                        targetTab = requestedTab,
+                        onTabHandled = { requestedTab = null },
                     )
                     if (learning) {
                         LearnKeyScreen(
@@ -169,6 +181,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        requestedTab = intent.getStringExtra(EXTRA_TAB)
     }
 
     override fun onResume() {

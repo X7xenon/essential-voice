@@ -170,6 +170,8 @@ fun HomeScreen(
     onDownload: (QualityTier) -> Unit,
     onDeleteModel: (QualityTier) -> Unit,
     onCancelDownload: () -> Unit,
+    targetTab: String? = null,
+    onTabHandled: () -> Unit = {},
 ) {
     // A pager rather than a when-block, so the two pages can be swiped between
     // as well as tapped between. The horizontal scrollers inside a page (the
@@ -177,9 +179,26 @@ fun HomeScreen(
     // their own ends, which is the behaviour anyone who has used a phone
     // expects without being told.
     val pages = Tab.entries
-    val pager = androidx.compose.foundation.pager.rememberPagerState { pages.size }
+    val initialPage = remember {
+        if (targetTab == com.ishaan.essentialvoice.MainActivity.TAB_LIBRARY) pages.indexOf(Tab.Library) else 0
+    }
+    val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = initialPage) { pages.size }
     val scope = rememberCoroutineScope()
     val tab = pages[pager.currentPage]
+
+    LaunchedEffect(targetTab) {
+        if (targetTab != null) {
+            val targetPage = when (targetTab) {
+                com.ishaan.essentialvoice.MainActivity.TAB_LIBRARY -> pages.indexOf(Tab.Library)
+                com.ishaan.essentialvoice.MainActivity.TAB_SETTINGS -> pages.indexOf(Tab.Settings)
+                else -> -1
+            }
+            if (targetPage >= 0 && targetPage != pager.currentPage) {
+                pager.animateScrollToPage(targetPage)
+            }
+            onTabHandled()
+        }
+    }
 
     // The page is recorded into a layer as it draws, so the bar can draw the
     // strip of it that sits behind itself, blurred. Android has no "blur what
@@ -688,6 +707,18 @@ private fun SetUpSection(p: Panels) {
                     settings.triggerKeyboardOnly,
                     enabled = setup.accessibility,
                 ) { prefs.setTriggerKeyboardOnly(it) }
+            }
+
+            Hairline()
+            SettingRow(
+                title = "Essential Key + Vol Down",
+                sub = "Press together to open Notes in GlyphVoice.",
+                enabled = setup.accessibility,
+            ) {
+                EvSwitch(
+                    settings.keyChordNotes,
+                    enabled = setup.accessibility,
+                ) { prefs.setKeyChordNotes(it) }
             }
 
             Hairline()
@@ -1303,6 +1334,18 @@ private fun GlyphSection(p: Panels) {
                     settings.triggerKeyboardOnly,
                     enabled = true,
                 ) { prefs.setTriggerKeyboardOnly(it) }
+            }
+
+            Hairline()
+            SettingRow(
+                title = "Essential Key + Vol Down",
+                sub = "Press together to open Notes in GlyphVoice.",
+                enabled = true,
+            ) {
+                EvSwitch(
+                    settings.keyChordNotes,
+                    enabled = true,
+                ) { prefs.setKeyChordNotes(it) }
             }
         }
     }

@@ -219,6 +219,8 @@ data class Settings(
     val notionPageId: String,
     /** Essential Key triggers voice only when keyboard is open. */
     val triggerKeyboardOnly: Boolean,
+    /** Essential Key + Volume Down shortcut to open Notes in GlyphVoice. */
+    val keyChordNotes: Boolean,
     /** Media audio focus mode while speaking: "duck", "pause", or "off". */
     val mediaDucking: String,
 ) {
@@ -363,6 +365,7 @@ class Prefs private constructor(context: Context) {
         notionToken = sp.getString(K_NOTION_TOKEN, DEFAULT_NOTION_TOKEN) ?: DEFAULT_NOTION_TOKEN,
         notionPageId = sp.getString(K_NOTION_PAGE_ID, DEFAULT_NOTION_PAGE_ID) ?: DEFAULT_NOTION_PAGE_ID,
         triggerKeyboardOnly = sp.getBoolean(K_TRIGGER_KEYBOARD_ONLY, false),
+        keyChordNotes = sp.getBoolean(K_KEY_CHORD_NOTES, true),
         mediaDucking = sp.getString(K_MEDIA_DUCKING, MEDIA_DUCK) ?: MEDIA_DUCK,
     )
 
@@ -567,6 +570,7 @@ class Prefs private constructor(context: Context) {
     fun setNotionToken(v: String) = sp.edit().putString(K_NOTION_TOKEN, v.trim()).apply()
     fun setNotionPageId(v: String) = sp.edit().putString(K_NOTION_PAGE_ID, v.trim()).apply()
     fun setTriggerKeyboardOnly(v: Boolean) = sp.edit().putBoolean(K_TRIGGER_KEYBOARD_ONLY, v).apply()
+    fun setKeyChordNotes(v: Boolean) = sp.edit().putBoolean(K_KEY_CHORD_NOTES, v).apply()
     fun setMediaDucking(v: String) = sp.edit().putString(K_MEDIA_DUCKING, v).apply()
 
     /**
@@ -803,6 +807,7 @@ class Prefs private constructor(context: Context) {
         private const val K_NOTION_PAGE_ID = "notion_page_id"
 
         private const val K_TRIGGER_KEYBOARD_ONLY = "trigger_keyboard_only"
+        private const val K_KEY_CHORD_NOTES = "key_chord_notes"
 
         const val MEDIA_DUCK = "duck"
         const val MEDIA_PAUSE = "pause"

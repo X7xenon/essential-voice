@@ -88,6 +88,15 @@ class EssentialKeyService : AccessibilityService() {
     private var downAt = 0L
     private var pendingStart: Runnable? = null
 
+    /** Tracks whether the Essential Key is currently held down. */
+    private var isEssentialKeyDown = false
+
+    /** Tracks whether Volume Down is currently held down. */
+    private var isVolumeDownDown = false
+
+    /** Set to true when the Essential Key + Volume Down chord has fired. */
+    private var chordTriggered = false
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
@@ -258,6 +267,37 @@ class EssentialKeyService : AccessibilityService() {
             return false
         }
 
+        val settings = prefs.now
+        val isVolDown = code == KeyEvent.KEYCODE_VOLUME_DOWN
+
+        // Essential Key + Volume Down chord to open Notes in GlyphVoice
+        if (settings.keyChordNotes && isVolDown) {
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> {
+                    isVolumeDownDown = true
+                    if (isEssentialKeyDown) {
+                        chordTriggered = true
+                        pendingStart?.let { handler.removeCallbacks(it) }
+                        pendingStart = null
+                        if (holding) {
+                            holding = false
+                            Dictation.cancel()
+                        }
+                        openNotes()
+                        return true
+                    }
+                }
+                KeyEvent.ACTION_UP -> {
+                    isVolumeDownDown = false
+                    if (chordTriggered) {
+                        if (!isEssentialKeyDown) chordTriggered = false
+                        return true
+                    }
+                }
+            }
+            if (chordTriggered) return true
+        }
+
         // The volume keys, before the reserved list turns them away.
         //
         // They are on that list as *triggers* — binding a dictation to
@@ -280,11 +320,25 @@ class EssentialKeyService : AccessibilityService() {
         // hung rather than like it is out of the way.
         if (Features.GAME_MODE && GameMode.mutesKey) return false
         if (!matchesTrigger(event)) return false
-        val settings = prefs.now
-        if (settings.triggerKeyboardOnly && !isKeyboardOpen() && !holding && pendingStart == null) return false
 
         when (event.action) {
             KeyEvent.ACTION_DOWN -> {
+                isEssentialKeyDown = true
+                if (settings.keyChordNotes && isVolumeDownDown) {
+                    chordTriggered = true
+                    pendingStart?.let { handler.removeCallbacks(it) }
+                    pendingStart = null
+                    if (holding) {
+                        holding = false
+                        Dictation.cancel()
+                    }
+                    openNotes()
+                    return settings.consumeKey
+                }
+                if (chordTriggered) return settings.consumeKey
+
+                if (settings.triggerKeyboardOnly && !isKeyboardOpen() && !holding && pendingStart == null) return false
+
                 if (event.repeatCount > 0) return settings.consumeKey
                 Log.i(TAG, "key down")
                 downAt = event.eventTime
@@ -300,6 +354,18 @@ class EssentialKeyService : AccessibilityService() {
             }
 
             KeyEvent.ACTION_UP -> {
+                isEssentialKeyDown = false
+                if (chordTriggered) {
+                    if (!isVolumeDownDown) chordTriggered = false
+                    pendingStart?.let { handler.removeCallbacks(it) }
+                    pendingStart = null
+                    if (holding) {
+                        holding = false
+                        Dictation.cancel()
+                    }
+                    return settings.consumeKey
+                }
+
                 val heldMs = event.eventTime - downAt
                 Log.i(TAG, "key up after ${heldMs}ms, holding=$holding")
                 pendingStart?.let { handler.removeCallbacks(it) }
@@ -343,6 +409,38 @@ class EssentialKeyService : AccessibilityService() {
     private fun startDictation(): Boolean = Dictation.begin()
 
     private fun endDictation(heldMs: Long) = Dictation.end(heldMs)
+
+    /**
+     * Opens the Notes / Library tab in GlyphVoice and triggers tactile haptic feedback.
+     */
+    private fun openNotes() {
+        Log.i(TAG, "Essential Key + Volume Down chord triggered: opening Notes in GlyphVoice")
+        vibrateChord()
+        val intent = android.content.Intent(this, com.ishaan.essentialvoice.MainActivity::class.java).apply {
+            action = android.content.Intent.ACTION_MAIN
+            addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+            putExtra(com.ishaan.essentialvoice.MainActivity.EXTRA_TAB, com.ishaan.essentialvoice.MainActivity.TAB_LIBRARY)
+            addFlags(
+                android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+            )
+        }
+        runCatching {
+            startActivity(intent)
+        }.onFailure {
+            Log.e(TAG, "Failed to launch MainActivity for Notes", it)
+        }
+    }
+
+    private fun vibrateChord() {
+        val vm = getSystemService(android.os.VibratorManager::class.java)
+        val vib = vm?.defaultVibrator
+            ?: @Suppress("DEPRECATION") (getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator)
+        runCatching {
+            vib?.vibrate(android.os.VibrationEffect.createOneShot(45, 160))
+        }
+    }
 
     // ---- putting the text back ------------------------------------------
 
